@@ -55,6 +55,12 @@ void test_preview_is_immutable_and_ordered() {
     require(result.changes[1].before_value == "A   Title", "second trace before-value mismatch");
     require(result.changes[1].proposed_value == "A Title", "collapse result mismatch");
     require(result.canonical_preview.fields[0].values[0] == "A Title", "canonical preview mismatch");
+    require(result.proposals.size() == 1, "chained rule trace should aggregate to one preview proposal");
+    require(result.proposals[0].field_index == 0 && result.proposals[0].value_index == 0, "proposal identity mismatch");
+    require(result.proposals[0].original_value == "  A   Title  ", "proposal original mismatch");
+    require(result.proposals[0].proposed_value == "A Title", "proposal canonical value mismatch");
+    require(result.proposals[0].rule_ids.size() == 2, "proposal rule provenance lost");
+    require(result.proposals[0].safety == djmeta::SafetyClass::Safe, "proposal safety aggregation mismatch");
 }
 
 void test_exact_alias_and_safety() {
@@ -81,6 +87,22 @@ void test_multivalue_preservation() {
     require(result.canonical_preview.fields[0].values.size() == 2, "multivalue cardinality changed");
     require(result.canonical_preview.fields[0].values[0] == "Artist A", "first multivalue not normalized");
     require(result.canonical_preview.fields[0].values[1] == "Artist B", "unchanged multivalue was modified");
+}
+
+void test_duplicate_field_names_keep_structural_identity() {
+    const djmeta::MetadataDocument input{{
+        {"CUSTOM", {"  first  "}},
+        {"CUSTOM", {"  second  "}}
+    }};
+    const auto result = djmeta::Engine{}.analyze(input, {trim_rule()}, "dup-fields");
+    require(result.changes.size() == 2, "duplicate fields should both retain independent trace");
+    require(result.proposals.size() == 2, "duplicate fields should produce independent proposals");
+    require(result.changes[0].field_index == 0 && result.changes[1].field_index == 1,
+            "duplicate field trace lost field index");
+    require(result.proposals[0].field_index == 0 && result.proposals[1].field_index == 1,
+            "duplicate field proposals lost field index");
+    require(result.proposals[0].proposed_value == "first", "first duplicate field proposal mismatch");
+    require(result.proposals[1].proposed_value == "second", "second duplicate field proposal mismatch");
 }
 
 void test_disabled_rule() {
@@ -185,6 +207,7 @@ int main() {
     test_preview_is_immutable_and_ordered();
     test_exact_alias_and_safety();
     test_multivalue_preservation();
+    test_duplicate_field_names_keep_structural_identity();
     test_disabled_rule();
     test_equal_priority_is_stable_by_rule_id();
     test_persisted_ruleset_loader();
