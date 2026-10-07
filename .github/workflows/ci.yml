@@ -2,15 +2,29 @@ name: Core CI
 
 on:
   push:
+    branches: [ main ]
     paths:
       - 'include/**'
-      - 'src/**'
-      - 'tests/**'
+      - 'src/core/**'
+      - 'src/interop/**'
+      - 'tests/core_tests.cpp'
+      - 'tests/c_api_tests.cpp'
+      - 'tests/validate_rules.py'
       - 'rules/**'
       - 'CMakeLists.txt'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'include/**'
+      - 'src/core/**'
+      - 'src/interop/**'
+      - 'tests/core_tests.cpp'
+      - 'tests/c_api_tests.cpp'
+      - 'tests/validate_rules.py'
+      - 'rules/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 concurrency:
@@ -47,7 +61,7 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Stage Windows integration artifact
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && github.event_name != 'pull_request'
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
