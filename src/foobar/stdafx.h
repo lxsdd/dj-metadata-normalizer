@@ -16,8 +16,10 @@
 #include "djmeta/normalizer.h"
 #include "djmeta/rule_loader.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
