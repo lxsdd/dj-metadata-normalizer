@@ -1,0 +1,91 @@
+name: foobar Preview Component
+
+on:
+  push:
+    paths:
+      - 'include/**'
+      - 'src/core/**'
+      - 'src/foobar/**'
+      - 'rules/**'
+      - 'scripts/**'
+      - 'tests/static_foobar_audit.py'
+      - 'foo_dj_metadata_normalizer.vcxproj'
+      - 'VERSION'
+      - '.github/workflows/foobar.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djmeta-foobar-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify analysis-only foobar boundary
+        run: python tests/static_foobar_audit.py
+
+  windows-build:
+    needs: static-audit
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build foobar preview component
+        shell: pwsh
+        run: ./scripts/build-foobar.ps1 -Platform '${{ matrix.platform }}' -Configuration Release -PlatformToolset v143
+      - name: Upload DLL
+        uses: actions/upload-artifact@v7
+        with:
+          name: foo-dj-metadata-normalizer-${{ matrix.platform }}
+          path: out/foobar/${{ matrix.platform }}/Release/foo_dj_metadata_normalizer.dll
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    if: github.event_name != 'pull_request'
+    needs: [static-audit, windows-build]
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: foo-dj-metadata-normalizer-Win32
+          path: candidate-input/Win32
+      - uses: actions/download-artifact@v8
+        with:
+          name: foo-dj-metadata-normalizer-x64
+          path: candidate-input/x64
+      - name: Package verified combined component
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw -LiteralPath VERSION).Trim()
+          ./scripts/package-foobar.ps1 `
+            -Win32Dll 'candidate-input/Win32/foo_dj_metadata_normalizer.dll' `
+            -X64Dll 'candidate-input/x64/foo_dj_metadata_normalizer.dll' `
+            -OutputDirectory 'candidate-output' `
+            -Version $version `
+            -Commit '${{ github.sha }}'
+      - name: Upload combined component
+        uses: actions/upload-artifact@v7
+        with:
+          name: foo-dj-metadata-normalizer-component
+          path: |
+            candidate-output/*.fb2k-component
+            candidate-output/BUILD-MANIFEST.txt
+            candidate-output/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
