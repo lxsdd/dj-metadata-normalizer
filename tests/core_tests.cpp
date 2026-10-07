@@ -103,7 +103,7 @@ void test_equal_priority_is_stable_by_rule_id() {
         "a-rule", true, 50, {"TITLE"},
         djmeta::MatchKind::Exact, "X", true,
         djmeta::TransformKind::ReplaceWith, "Y",
-        djmeta::SafetyClass::Review, "ordering test"
+        djmeta::SafetyClass::Review, "ordering test", "manual", ""
     };
 
     const djmeta::MetadataDocument input{{{"TITLE", {"X"}}}};
