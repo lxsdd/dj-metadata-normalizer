@@ -117,7 +117,9 @@ void test_fingerprint_contract() {
     require(fa.size() == 64, "fingerprint is not SHA-256 hex width");
     require(fa == djmeta::fingerprint(b), "equal documents must fingerprint equally");
     require(fa != djmeta::fingerprint(c), "metadata change must change fingerprint");
-    require(djmeta::fingerprint({}).size() == 64, "empty document fingerprint invalid");
+    const std::string empty = djmeta::fingerprint({});
+    require(empty == "bc90e3740621acaeaf320fd210e1e592dcdb12f0f3e7e67a89c0b5e92bb3c8ad",
+            "empty document SHA-256 regression vector changed");
 }
 
 } // namespace
