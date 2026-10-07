@@ -3,7 +3,11 @@
 #include <stddef.h>
 
 #if defined(_WIN32)
+#if defined(DJMETA_BUILD_DLL)
 #define DJMETA_API __declspec(dllexport)
+#else
+#define DJMETA_API __declspec(dllimport)
+#endif
 #else
 #define DJMETA_API __attribute__((visibility("default")))
 #endif
