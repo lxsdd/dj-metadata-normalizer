@@ -45,3 +45,26 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Stage Windows integration artifact
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force integration-artifact/rules | Out-Null
+          Copy-Item build/Release/djmeta_native.dll integration-artifact/djmeta_native.dll
+          Copy-Item rules/default-rules.json integration-artifact/rules/default-rules.json
+          @(
+            "commit=$env:GITHUB_SHA",
+            'abi_version=1',
+            'ruleset=rules/default-rules.json'
+          ) | Set-Content -Encoding UTF8 integration-artifact/MANIFEST.txt
+
+      - name: Upload Windows integration artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: djmeta-native-${{ github.sha }}
+          path: integration-artifact/**
+          if-no-files-found: error
+          retention-days: 90
