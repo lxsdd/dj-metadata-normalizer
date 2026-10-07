@@ -21,15 +21,17 @@ Output contains:
 
 - SHA-256 input fingerprint;
 - ruleset revision;
-- ordered per-rule change trace;
-- field + multivalue index;
+- an ordered low-level per-rule change trace;
+- aggregated user-facing final proposals;
+- exact field index + field name + multivalue index;
 - raw original value;
-- value immediately before the rule;
-- proposed value;
-- rule ID;
-- SAFE / CONFIDENT / REVIEW;
-- rationale;
+- value immediately before each rule;
+- final proposed value;
+- ordered rule IDs and rationales;
+- aggregated SAFE / CONFIDENT / REVIEW classification;
 - complete canonical preview document.
+
+The separate field index is intentional: duplicate same-named metadata entries remain structurally distinguishable.
 
 Rules execute by ascending priority and then stable rule ID. A later rule sees the preview result of earlier rules, while every trace entry retains the raw original value.
 
@@ -76,13 +78,15 @@ v1 deliberately starts with a small deterministic transformation vocabulary:
 
 The schema is designed to evolve with explicit versions. Unicode normalization, artist collaboration parsing, title/version extraction, genre logic, aliases and cross-field rules are added as named, testable primitives rather than an opaque scripting language.
 
-The C++ engine currently exposes the typed rule model directly. Loading the persisted JSON ruleset into that model is the next core milestone; the JSON contract is already CI-validated so adapters do not invent their own schema.
+The C++ engine owns the strict schema-v1 JSON loader. The persisted ruleset is therefore parsed and validated by the same code used by both integration surfaces; adapters do not implement their own rule parser.
 
 ## Shared-engine integration
 
 The foobar component links the C++ core directly.
 
-DJ Library must not port rules into C#. The intended integration is a small versioned C ABI wrapper built from this repository and called from C# via P/Invoke. The ABI transports UTF-8 metadata/rule input and preview output; ownership/version functions will be explicit.
+DJ Library must not port rules into C#. A versioned analysis-only C ABI is implemented in this repository for C#/P/Invoke integration. It accepts UTF-8 Bridge-v3 `metadata_vectors_json` plus the canonical ruleset JSON and returns deterministic preview JSON. ABI-owned strings have an explicit release function and exceptions never cross the ABI.
+
+The canonical active runtime rules path is `%APPDATA%\DJMetadataNormalizer\ruleset.json`; the foobar preview opens it read-only and falls back to the embedded versioned default ruleset when absent.
 
 This keeps behavior identical across both surfaces while avoiding C++ ABI coupling to .NET.
 
@@ -91,5 +95,7 @@ This keeps behavior identical across both surfaces while avoiding C++ ABI coupli
 The future foobar writer is an adapter, not part of the core. It will use supported foobar2000 SDK metadata update APIs and mutate only explicitly approved fields.
 
 No direct audio-file editing is permitted in DJ Library or in the Bridge.
+
+The first foobar integration milestone is deliberately analysis-only. A static CI audit rejects write-capable SDK/file tokens before Win32/x64 component builds run.
 
 Virtual subsongs require a separate qualification gate because writes must not erase physical metadata that is absent from a projected subsong view.
