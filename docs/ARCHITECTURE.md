@@ -41,7 +41,7 @@ Analysis performs no I/O and cannot write tags.
 
 ### SAFE
 
-Reserved for transformations demonstrated to be deterministic and non-semantic. The initial allow-list is intentionally tiny: leading/trailing ASCII whitespace removal and repeated ASCII whitespace collapse.
+Reserved for transformations demonstrated to be deterministic and non-semantic. The qualified allow-list is intentionally small: Unicode White_Space mapping to ASCII space, leading/trailing ASCII whitespace removal, and repeated ASCII whitespace collapse.
 
 ### CONFIDENT
 
@@ -51,7 +51,7 @@ Strong canonicalization with domain meaning. It remains visible and selected onl
 
 Ambiguous, semantic, newly learned or not-yet-qualified transformations. New rules derived from user corrections begin here.
 
-The v1 rules validator fails closed if a generic replacement rule is marked SAFE.
+The rules validator fails closed if a generic semantic replacement rule is marked SAFE.
 
 ## Stale-preview contract
 
@@ -64,11 +64,15 @@ Before a future write, the foobar adapter must re-read the selected item's metad
 
 `(path, subsong)` identifies the track; it does not replace the metadata fingerprint.
 
-## Rule model v1
+## Rule model and schema evolution
 
-The canonical persisted representation is `rules/schema-v1.json` + a concrete ruleset such as `rules/default-rules.json`.
+The persisted representation is explicitly versioned.
 
-v1 deliberately starts with a small deterministic transformation vocabulary:
+- `rules/schema-v1.json` remains supported for existing rule files.
+- `rules/schema-v2.json` adds named primitives without changing v1 semantics.
+- `rules/default-rules.json` uses the newest qualified schema.
+
+v1 supports:
 
 - match always;
 - match exact value;
@@ -76,9 +80,15 @@ v1 deliberately starts with a small deterministic transformation vocabulary:
 - collapse ASCII whitespace;
 - replace with a canonical value.
 
-The schema is designed to evolve with explicit versions. Unicode normalization, artist collaboration parsing, title/version extraction, genre logic, aliases and cross-field rules are added as named, testable primitives rather than an opaque scripting language.
+v2 adds:
 
-The C++ engine owns the strict schema-v1 JSON loader. The persisted ruleset is therefore parsed and validated by the same code used by both integration surfaces; adapters do not implement their own rule parser.
+- normalize Unicode White_Space code points to ASCII space.
+
+The v2 transform deliberately preserves every non-whitespace UTF-8 byte and leaves malformed UTF-8 byte sequences untouched rather than guessing. Existing trim/collapse rules then operate deterministically on the mapped ASCII spaces.
+
+The schema continues to evolve through named, testable primitives. Artist collaboration parsing, title/version extraction, genre logic, aliases, separators, case handling and cross-field rules are not hidden inside an opaque scripting language.
+
+The C++ engine owns the strict v1/v2 JSON loader. A schema-v1 document using a v2-only transform is rejected. Adapters do not implement their own rule parser.
 
 ## Shared-engine integration
 
@@ -99,3 +109,7 @@ No direct audio-file editing is permitted in DJ Library or in the Bridge.
 The first foobar integration milestone is deliberately analysis-only. A static CI audit rejects write-capable SDK/file tokens before Win32/x64 component builds run.
 
 Virtual subsongs require a separate qualification gate because writes must not erase physical metadata that is absent from a projected subsong view.
+
+## Unified prepare-track workflow
+
+The approved end-state extends planning beyond tags to filename and destination. See `docs/UNIFIED-WORKFLOW.md`. The shared engine computes desired state; the foobar adapter inherits host policy for configuration, title formatting, tag writes and file operations wherever supported by the SDK.

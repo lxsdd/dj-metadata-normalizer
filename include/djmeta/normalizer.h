@@ -8,7 +8,7 @@ namespace djmeta {
 
 enum class SafetyClass { Safe, Confident, Review };
 enum class MatchKind { Always, Exact };
-enum class TransformKind { TrimWhitespace, CollapseWhitespace, ReplaceWith };
+enum class TransformKind { NormalizeUnicodeWhitespace, TrimWhitespace, CollapseWhitespace, ReplaceWith };
 
 struct MetadataField {
     std::string name;

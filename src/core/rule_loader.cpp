@@ -200,6 +200,7 @@ MatchKind parse_match_kind(JsonReader& reader, const std::string& value) {
 }
 
 TransformKind parse_transform_kind(JsonReader& reader, const std::string& value) {
+    if (value == "normalize_unicode_whitespace") return TransformKind::NormalizeUnicodeWhitespace;
     if (value == "trim_whitespace") return TransformKind::TrimWhitespace;
     if (value == "collapse_whitespace") return TransformKind::CollapseWhitespace;
     if (value == "replace_with") return TransformKind::ReplaceWith;
@@ -370,6 +371,7 @@ Rule parse_rule(JsonReader& reader) {
         if (field.empty()) reader.fail("rule.fields contains an empty field name");
 
     if (rule.safety == SafetyClass::Safe &&
+        rule.transform != TransformKind::NormalizeUnicodeWhitespace &&
         rule.transform != TransformKind::TrimWhitespace &&
         rule.transform != TransformKind::CollapseWhitespace)
         reader.fail("SAFE rule uses an unqualified semantic transform: " + rule.id);
@@ -427,7 +429,7 @@ Ruleset parse_ruleset_json(std::string_view json) {
 
     if (!have_schema || !have_id || !have_revision || !have_rules)
         reader.fail("ruleset is missing a required property");
-    if (out.schema_version != 1) reader.fail("unsupported schema_version");
+    if (out.schema_version != 1 && out.schema_version != 2) reader.fail("unsupported schema_version");
     if (out.id.empty()) reader.fail("ruleset_id must not be empty");
     if (out.revision.empty()) reader.fail("revision must not be empty");
 
@@ -435,6 +437,9 @@ Ruleset parse_ruleset_json(std::string_view json) {
     for (const Rule& rule : out.rules) {
         if (!ids.insert(rule.id).second)
             reader.fail("duplicate rule id: " + rule.id);
+        if (out.schema_version == 1 &&
+            rule.transform == TransformKind::NormalizeUnicodeWhitespace)
+            reader.fail("schema_version 1 does not support normalize_unicode_whitespace: " + rule.id);
     }
     return out;
 }

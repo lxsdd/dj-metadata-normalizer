@@ -17,6 +17,71 @@ bool ascii_space(unsigned char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' || c == '\v';
 }
 
+bool unicode_space(std::uint32_t cp) {
+    return (cp >= 0x0009u && cp <= 0x000Du) ||
+           cp == 0x0020u ||
+           cp == 0x0085u ||
+           cp == 0x00A0u ||
+           cp == 0x1680u ||
+           (cp >= 0x2000u && cp <= 0x200Au) ||
+           cp == 0x2028u ||
+           cp == 0x2029u ||
+           cp == 0x202Fu ||
+           cp == 0x205Fu ||
+           cp == 0x3000u;
+}
+
+bool decode_utf8_at(std::string_view value, std::size_t pos, std::uint32_t& cp, std::size_t& width) {
+    if (pos >= value.size()) return false;
+    const unsigned char first = static_cast<unsigned char>(value[pos]);
+    if (first < 0x80u) {
+        cp = first;
+        width = 1;
+        return true;
+    }
+
+    std::size_t need = 0;
+    std::uint32_t min_cp = 0;
+    if ((first & 0xE0u) == 0xC0u) {
+        need = 2; cp = first & 0x1Fu; min_cp = 0x80u;
+    } else if ((first & 0xF0u) == 0xE0u) {
+        need = 3; cp = first & 0x0Fu; min_cp = 0x800u;
+    } else if ((first & 0xF8u) == 0xF0u) {
+        need = 4; cp = first & 0x07u; min_cp = 0x10000u;
+    } else {
+        return false;
+    }
+
+    if (pos + need > value.size()) return false;
+    for (std::size_t i = 1; i < need; ++i) {
+        const unsigned char next = static_cast<unsigned char>(value[pos + i]);
+        if ((next & 0xC0u) != 0x80u) return false;
+        cp = (cp << 6) | (next & 0x3Fu);
+    }
+    if (cp < min_cp || cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) return false;
+    width = need;
+    return true;
+}
+
+std::string normalize_unicode_whitespace(std::string_view value) {
+    std::string out;
+    out.reserve(value.size());
+    for (std::size_t pos = 0; pos < value.size();) {
+        std::uint32_t cp = 0;
+        std::size_t width = 0;
+        if (!decode_utf8_at(value, pos, cp, width)) {
+            // Fail-safe preservation: malformed bytes are not silently rewritten.
+            out.push_back(value[pos]);
+            ++pos;
+            continue;
+        }
+        if (unicode_space(cp)) out.push_back(' ');
+        else out.append(value.substr(pos, width));
+        pos += width;
+    }
+    return out;
+}
+
 char ascii_lower(char c) {
     return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
 }
@@ -81,6 +146,8 @@ int safety_rank(SafetyClass value) {
 
 std::string transform(const Rule& rule, std::string_view value) {
     switch (rule.transform) {
+    case TransformKind::NormalizeUnicodeWhitespace:
+        return normalize_unicode_whitespace(value);
     case TransformKind::TrimWhitespace:
         return trim_whitespace(value);
     case TransformKind::CollapseWhitespace:

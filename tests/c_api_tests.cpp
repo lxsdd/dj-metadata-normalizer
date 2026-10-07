@@ -41,6 +41,31 @@ void test_success() {
     djmeta_free_string_v1(output);
 }
 
+void test_schema_v2_unicode_whitespace() {
+    const char* metadata =
+        R"([{"name":"TITLE","values":["\u00a0A\u202f  B\u3000"]}])";
+    const char* rules =
+        R"({"schema_version":2,"ruleset_id":"test-v2","revision":"r2","rules":[)"
+        R"({"id":"safe.unicode","enabled":true,"priority":5,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"normalize_unicode_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"unicode whitespace"}},)"
+        R"({"id":"safe.trim","enabled":true,"priority":10,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"trim_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"trim"}},)"
+        R"({"id":"safe.collapse","enabled":true,"priority":20,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"collapse_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"collapse"}}]})";
+
+    char* output = nullptr;
+    char* error = nullptr;
+    const int status = djmeta_analyze_json_v1(metadata, rules, &output, &error);
+    require(status == DJMETA_STATUS_OK, "C ABI schema-v2 analysis failed");
+    require(output != nullptr && error == nullptr, "C ABI schema-v2 output contract failed");
+
+    const std::string json(output);
+    require(json.find("\"ruleset_revision\":\"r2\"") != std::string::npos,
+            "schema-v2 revision missing from analysis JSON");
+    require(json.find("\"proposed\":\"A B\"") != std::string::npos,
+            "schema-v2 unicode whitespace proposal missing");
+    require(json.find("safe.unicode") != std::string::npos,
+            "schema-v2 unicode rule provenance missing");
+    djmeta_free_string_v1(output);
+}
+
 void test_errors_do_not_cross_abi() {
     char* output = nullptr;
     char* error = nullptr;
@@ -63,6 +88,7 @@ void test_errors_do_not_cross_abi() {
 int main() {
     require(djmeta_abi_version() == 1u, "unexpected native ABI version");
     test_success();
+    test_schema_v2_unicode_whitespace();
     test_errors_do_not_cross_abi();
     std::cout << "PASS: djmeta native analysis ABI\n";
     return 0;
