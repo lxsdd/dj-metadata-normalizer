@@ -1,7 +1,11 @@
 #include "djmeta/normalizer.h"
+#include "djmeta/rule_loader.h"
 
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -107,6 +111,56 @@ void test_equal_priority_is_stable_by_rule_id() {
     require(result.canonical_preview.fields[0].values[0] == "Z", "equal-priority chain result mismatch");
 }
 
+std::string read_text(const char* path) {
+    std::ifstream in(path, std::ios::binary);
+    require(static_cast<bool>(in), "could not open test ruleset");
+    std::ostringstream out;
+    out << in.rdbuf();
+    return out.str();
+}
+
+void require_invalid_ruleset(const std::string& json, const char* message) {
+    try {
+        (void)djmeta::parse_ruleset_json(json);
+    } catch (const std::invalid_argument&) {
+        return;
+    }
+    require(false, message);
+}
+
+void test_persisted_ruleset_loader() {
+    const auto ruleset = djmeta::parse_ruleset_json(read_text("rules/default-rules.json"));
+    require(ruleset.schema_version == 1, "persisted schema version mismatch");
+    require(ruleset.id == "lxsdd.dj-metadata-normalizer.default", "persisted ruleset id mismatch");
+    require(ruleset.revision == "2026-10-07.1", "persisted ruleset revision mismatch");
+    require(ruleset.rules.size() == 2, "persisted default rule count mismatch");
+    require(ruleset.rules[0].source_kind == "builtin", "rule provenance was not loaded");
+
+    const djmeta::MetadataDocument input{{{"TITLE", {"  A   B  "}}}};
+    const auto result = djmeta::Engine{}.analyze(input, ruleset.rules, ruleset.revision);
+    require(result.changes.size() == 2, "persisted default rules did not execute");
+    require(result.canonical_preview.fields[0].values[0] == "A B", "persisted rules canonical preview mismatch");
+
+    const std::string unicode =
+        R"({"schema_version":1,"ruleset_id":"x","revision":"r","rules":[)"
+        R"({"id":"review.x","enabled":true,"priority":1,"fields":["TITLE"],)"
+        R"("match":{"kind":"exact","value":"caf\u00e9"},"transform":{"kind":"replace_with","replacement":"Cafe"},)"
+        R"("safety":"REVIEW","source":{"kind":"manual","rationale":"caf\u00e9"}}]})";
+    const auto parsed_unicode = djmeta::parse_ruleset_json(unicode);
+    require(parsed_unicode.rules[0].match_value == "caf\xC3\xA9", "unicode escape did not decode as UTF-8");
+    require(parsed_unicode.rules[0].rationale == "caf\xC3\xA9", "unicode provenance did not decode as UTF-8");
+
+    require_invalid_ruleset(
+        R"({"schema_version":2,"ruleset_id":"x","revision":"r","rules":[]})",
+        "unsupported schema version was accepted");
+    require_invalid_ruleset(
+        R"({"schema_version":1,"ruleset_id":"x","revision":"r","rules":[{"id":"safe.x","enabled":true,"priority":1,"fields":["TITLE"],"match":{"kind":"always"},"transform":{"kind":"replace_with","replacement":"X"},"safety":"SAFE","source":{"kind":"manual","rationale":"unsafe"}}]})",
+        "semantic replacement was accepted as SAFE");
+    require_invalid_ruleset(
+        R"({"schema_version":1,"ruleset_id":"x","revision":"r","rules":[],"unknown":true})",
+        "unknown top-level property was accepted");
+}
+
 void test_fingerprint_contract() {
     const djmeta::MetadataDocument a{{{"ARTIST", {"A", "B"}}, {"TITLE", {"Track"}}}};
     const djmeta::MetadataDocument b = a;
@@ -130,6 +184,7 @@ int main() {
     test_multivalue_preservation();
     test_disabled_rule();
     test_equal_priority_is_stable_by_rule_id();
+    test_persisted_ruleset_loader();
     test_fingerprint_contract();
     std::cout << "PASS: djmeta core deterministic preview tests\n";
     return 0;
