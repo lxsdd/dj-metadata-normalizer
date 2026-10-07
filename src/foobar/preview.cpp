@@ -102,7 +102,7 @@ void show_normalization_preview(const metadb_handle_list& handles) {
                 message += std::to_string(proposal_count - kDetailLimit);
                 message += " weitere Vorschläge werden in dieser frühen Vorschau nicht angezeigt.";
             }
-            message += "\n\nVorschau בלבד: Es wurden keine Tags geschrieben.";
+            message += "\n\nNur Vorschau: Es wurden keine Tags geschrieben.";
         }
 
         popup_message::g_show(message.c_str(), "DJ Metadata Normalizer");
