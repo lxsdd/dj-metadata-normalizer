@@ -26,12 +26,14 @@ It contains every metadata field as exact ordered value vectors, including core 
 Example:
 
 ```json
-{
-  "ARTIST": ["A", "B"],
-  "TITLE": ["Track"],
-  "GENRE": ["House", "Tech House"]
-}
+[
+  {"name":"ARTIST","values":["A","B"]},
+  {"name":"GENRE","values":["House","Tech House"]},
+  {"name":"TITLE","values":["Track"]}
+]
 ```
+
+The array-of-entry shape is deliberate: it preserves field/value structure without relying on JSON object-key uniqueness.
 
 Requirements:
 
