@@ -70,6 +70,15 @@ std::string collapse_whitespace(std::string_view value) {
     return out;
 }
 
+int safety_rank(SafetyClass value) {
+    switch (value) {
+    case SafetyClass::Safe: return 0;
+    case SafetyClass::Confident: return 1;
+    case SafetyClass::Review: return 2;
+    }
+    return 2;
+}
+
 std::string transform(const Rule& rule, std::string_view value) {
     switch (rule.transform) {
     case TransformKind::TrimWhitespace:
@@ -218,6 +227,7 @@ AnalysisResult Engine::analyze(
                 if (proposed == current) continue;
 
                 result.changes.push_back(Change{
+                    field_index,
                     field.name,
                     value_index,
                     original,
@@ -229,6 +239,31 @@ AnalysisResult Engine::analyze(
                 });
                 current = proposed;
             }
+        }
+    }
+
+    for (std::size_t field_index = 0; field_index < result.canonical_preview.fields.size(); ++field_index) {
+        const MetadataField& original_field = input.fields[field_index];
+        const MetadataField& preview_field = result.canonical_preview.fields[field_index];
+        for (std::size_t value_index = 0; value_index < preview_field.values.size(); ++value_index) {
+            if (preview_field.values[value_index] == original_field.values[value_index]) continue;
+
+            Proposal proposal;
+            proposal.field_index = field_index;
+            proposal.field = preview_field.name;
+            proposal.value_index = value_index;
+            proposal.original_value = original_field.values[value_index];
+            proposal.proposed_value = preview_field.values[value_index];
+            proposal.safety = SafetyClass::Safe;
+
+            for (const Change& change : result.changes) {
+                if (change.field_index != field_index || change.value_index != value_index) continue;
+                proposal.rule_ids.push_back(change.rule_id);
+                proposal.rationales.push_back(change.rationale);
+                if (safety_rank(change.safety) > safety_rank(proposal.safety))
+                    proposal.safety = change.safety;
+            }
+            result.proposals.push_back(std::move(proposal));
         }
     }
     return result;
