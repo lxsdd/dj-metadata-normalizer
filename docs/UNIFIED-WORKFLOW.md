@@ -170,3 +170,10 @@ The preview combines:
 - conflicts and stale-state status.
 
 No background write or automatic file move is permitted.
+
+
+## SDK planner qualification note
+
+The public foobar2000 SDK exposes `titleformat_compiler` as a core service and a standard `file_info`-based evaluation path. The planner therefore evaluates naming/routing expressions against an in-memory canonical metadata projection using the host compiler; it does not implement foobar title-format syntax itself.
+
+The public SDK also exposes low-level filesystem move/copy primitives and file-operation notifications, but the project has not yet identified a parameterized public service that executes foobar's built-in File Operations command with its complete user policy. Therefore the current milestone is deliberately planning-only. The eventual executor remains gated on an explicit host-policy mapping for timestamp and File Operations behavior.
