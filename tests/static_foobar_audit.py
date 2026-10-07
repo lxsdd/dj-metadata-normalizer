@@ -2,8 +2,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 foobar = root / "src" / "foobar"
-sources = "
-".join(
+sources = "\\n".join(
     p.read_text(encoding="utf-8", errors="strict")
     for p in sorted(foobar.rglob("*"))
     if p.suffix.lower() in {".cpp", ".h", ".rc"}
