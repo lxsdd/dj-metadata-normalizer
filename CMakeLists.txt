@@ -4,6 +4,7 @@ project(dj_metadata_normalizer VERSION 0.1.0 LANGUAGES CXX)
 
 add_library(djmeta_core STATIC
     src/core/normalizer.cpp
+    src/core/rule_loader.cpp
 )
 target_include_directories(djmeta_core PUBLIC include)
 target_compile_features(djmeta_core PUBLIC cxx_std_20)
@@ -28,3 +29,4 @@ endif()
 
 enable_testing()
 add_test(NAME djmeta_core_tests COMMAND djmeta_core_tests)
+set_tests_properties(djmeta_core_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
