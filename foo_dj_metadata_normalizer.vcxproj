@@ -64,6 +64,7 @@
     <ClCompile Include="src\foobar\metadata_adapter.cpp" />
     <ClCompile Include="src\foobar\preview.cpp" />
     <ClCompile Include="src\foobar\rules_runtime.cpp" />
+    <ClCompile Include="src\foobar\titleformat_planner.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\djmeta\normalizer.h" />
@@ -74,6 +75,7 @@
     <ClInclude Include="src\foobar\resource.h" />
     <ClInclude Include="src\foobar\rules_runtime.h" />
     <ClInclude Include="src\foobar\stdafx.h" />
+    <ClInclude Include="src\foobar\titleformat_planner.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\foobar\component.rc" />
