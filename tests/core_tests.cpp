@@ -98,7 +98,7 @@ void test_unicode_whitespace_schema_v2() {
     require(result.proposals[0].safety == djmeta::SafetyClass::Safe,
             "unicode whitespace proposal must remain SAFE");
 
-    const std::string malformed = std::string("A") + char(0xC2) + "B";
+    const std::string malformed = std::string("A") + std::string("\xC2", 1) + "B";
     const djmeta::MetadataDocument malformed_input{{{"TITLE", {malformed}}}};
     const auto malformed_result = djmeta::Engine{}.analyze(
         malformed_input, {unicode_whitespace_rule()}, "malformed");
