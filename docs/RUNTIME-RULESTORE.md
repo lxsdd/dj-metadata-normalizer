@@ -14,13 +14,13 @@ The current foobar preview component:
 
 1. checks the canonical shared path;
 2. opens an existing file read-only;
-3. parses it with the normalizer core's strict schema-v1 loader;
+3. parses it with the normalizer core's strict versioned rules loader (schema v1 or v2);
 4. displays the exact ruleset revision in preview;
 5. falls back to the repository's embedded `rules/default-rules.json` only when no shared file exists.
 
 Analysis does not create or modify the runtime ruleset.
 
-The embedded fallback makes a newly installed preview component usable before a rule-management surface exists, while preserving one schema and one engine.
+The embedded fallback makes a newly installed preview component usable before a rule-management surface exists, while preserving one versioned schema family and one engine.
 
 ## Future rule-management writes
 
@@ -50,3 +50,7 @@ Any mismatch requires a fresh analysis.
 The canonical schema and default rules live in `lxsdd/dj-metadata-normalizer`.
 
 DJ Library must call the shared engine/native ABI instead of translating the rules into C#.
+
+## Schema compatibility
+
+The runtime loader remains backward compatible with qualified schema-v1 rule files. The embedded default advances independently to the newest qualified schema. A newer transform is never silently accepted under an older schema version.
