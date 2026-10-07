@@ -439,4 +439,48 @@ Ruleset parse_ruleset_json(std::string_view json) {
     return out;
 }
 
+MetadataDocument parse_metadata_vectors_json(std::string_view json) {
+    JsonReader reader(json);
+    MetadataDocument out;
+
+    reader.expect('[');
+    if (!reader.consume(']')) {
+        while (true) {
+            MetadataField field;
+            bool have_name = false;
+            bool have_values = false;
+
+            reader.expect('{');
+            if (!reader.consume('}')) {
+                while (true) {
+                    const std::string key = reader.parse_string();
+                    reader.expect(':');
+                    if (key == "name") {
+                        mark_once(reader, have_name, key);
+                        field.name = reader.parse_string();
+                    } else if (key == "values") {
+                        mark_once(reader, have_values, key);
+                        field.values = reader.parse_string_array();
+                    } else {
+                        reader.fail("unknown metadata-vector property: " + key);
+                    }
+                    if (reader.consume('}')) break;
+                    reader.expect(',');
+                }
+            }
+
+            if (!have_name || !have_values)
+                reader.fail("metadata vector requires name and values");
+            if (field.name.empty())
+                reader.fail("metadata vector field name must not be empty");
+
+            out.fields.push_back(std::move(field));
+            if (reader.consume(']')) break;
+            reader.expect(',');
+        }
+    }
+    reader.require_end();
+    return out;
+}
+
 } // namespace djmeta
