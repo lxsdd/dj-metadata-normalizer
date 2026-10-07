@@ -39,6 +39,17 @@ djmeta::Rule collapse_rule() {
     };
 }
 
+djmeta::Rule unicode_whitespace_rule() {
+    return djmeta::Rule{
+        "safe.normalize-unicode-whitespace", true, 5, {"*"},
+        djmeta::MatchKind::Always, "", false,
+        djmeta::TransformKind::NormalizeUnicodeWhitespace, "",
+        djmeta::SafetyClass::Safe,
+        "Map Unicode White_Space to ASCII space.",
+        "builtin", ""
+    };
+}
+
 void test_preview_is_immutable_and_ordered() {
     const djmeta::MetadataDocument input{{{"TITLE", {"  A   Title  "}}}};
     const djmeta::MetadataDocument input_copy = input;
@@ -61,6 +72,40 @@ void test_preview_is_immutable_and_ordered() {
     require(result.proposals[0].proposed_value == "A Title", "proposal canonical value mismatch");
     require(result.proposals[0].rule_ids.size() == 2, "proposal rule provenance lost");
     require(result.proposals[0].safety == djmeta::SafetyClass::Safe, "proposal safety aggregation mismatch");
+}
+
+void test_unicode_whitespace_schema_v2() {
+    const std::string value =
+        std::string("\xC2\xA0") + "A" +
+        std::string("\xE2\x80\xAF") + "  B" +
+        std::string("\xE3\x80\x80");
+    const djmeta::MetadataDocument input{{{"TITLE", {value}}}};
+    const auto result = djmeta::Engine{}.analyze(
+        input,
+        {collapse_rule(), trim_rule(), unicode_whitespace_rule()},
+        "rules-v2-unicode");
+
+    require(result.changes.size() == 3, "unicode whitespace chain should normalize, trim, and collapse");
+    require(result.changes[0].rule_id == "safe.normalize-unicode-whitespace",
+            "unicode whitespace rule priority mismatch");
+    require(result.changes[1].rule_id == "safe.trim-whitespace",
+            "trim should run after unicode whitespace normalization");
+    require(result.changes[2].rule_id == "safe.collapse-whitespace",
+            "collapse should run after trim");
+    require(result.canonical_preview.fields[0].values[0] == "A B",
+            "unicode whitespace canonical preview mismatch");
+    require(result.proposals.size() == 1, "unicode whitespace chain should aggregate to one proposal");
+    require(result.proposals[0].safety == djmeta::SafetyClass::Safe,
+            "unicode whitespace proposal must remain SAFE");
+
+    const std::string malformed = std::string("A") + char(0xC2) + "B";
+    const djmeta::MetadataDocument malformed_input{{{"TITLE", {malformed}}}};
+    const auto malformed_result = djmeta::Engine{}.analyze(
+        malformed_input, {unicode_whitespace_rule()}, "malformed");
+    require(malformed_result.changes.empty(),
+            "malformed UTF-8 bytes must be preserved rather than rewritten");
+    require(malformed_result.canonical_preview == malformed_input,
+            "malformed UTF-8 preservation changed metadata");
 }
 
 void test_exact_alias_and_safety() {
@@ -180,10 +225,10 @@ void test_bridge_metadata_vector_loader() {
 
 void test_persisted_ruleset_loader() {
     const auto ruleset = djmeta::parse_ruleset_json(read_text("rules/default-rules.json"));
-    require(ruleset.schema_version == 1, "persisted schema version mismatch");
+    require(ruleset.schema_version == 2, "persisted schema version mismatch");
     require(ruleset.id == "lxsdd.dj-metadata-normalizer.default", "persisted ruleset id mismatch");
-    require(ruleset.revision == "2026-10-07.1", "persisted ruleset revision mismatch");
-    require(ruleset.rules.size() == 2, "persisted default rule count mismatch");
+    require(ruleset.revision == "2026-10-07.2", "persisted ruleset revision mismatch");
+    require(ruleset.rules.size() == 3, "persisted default rule count mismatch");
     require(ruleset.rules[0].source_kind == "builtin", "rule provenance was not loaded");
 
     const djmeta::MetadataDocument input{{{"TITLE", {"  A   B  "}}}};
@@ -200,8 +245,21 @@ void test_persisted_ruleset_loader() {
     require(parsed_unicode.rules[0].match_value == "caf\xC3\xA9", "unicode escape did not decode as UTF-8");
     require(parsed_unicode.rules[0].rationale == "caf\xC3\xA9", "unicode provenance did not decode as UTF-8");
 
+    const auto legacy_v1 = djmeta::parse_ruleset_json(
+        R"({"schema_version":1,"ruleset_id":"legacy","revision":"r1","rules":[)"
+        R"({"id":"safe.trim","enabled":true,"priority":1,"fields":["*"],"match":{"kind":"always"},)"
+        R"("transform":{"kind":"trim_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"legacy trim"}}]})");
+    require(legacy_v1.schema_version == 1 && legacy_v1.rules.size() == 1,
+            "schema-v1 backward compatibility was lost");
+
     require_invalid_ruleset(
-        R"({"schema_version":2,"ruleset_id":"x","revision":"r","rules":[]})",
+        R"({"schema_version":1,"ruleset_id":"x","revision":"r","rules":[)"
+        R"({"id":"safe.unicode","enabled":true,"priority":1,"fields":["*"],"match":{"kind":"always"},)"
+        R"("transform":{"kind":"normalize_unicode_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"v2 only"}}]})",
+        "schema-v1 accepted a schema-v2-only transform");
+
+    require_invalid_ruleset(
+        R"({"schema_version":3,"ruleset_id":"x","revision":"r","rules":[]})",
         "unsupported schema version was accepted");
     require_invalid_ruleset(
         R"({"schema_version":1,"ruleset_id":"x","revision":"r","rules":[{"id":"safe.x","enabled":true,"priority":1,"fields":["TITLE"],"match":{"kind":"always"},"transform":{"kind":"replace_with","replacement":"X"},"safety":"SAFE","source":{"kind":"manual","rationale":"unsafe"}}]})",
@@ -227,6 +285,7 @@ void test_fingerprint_contract() {
 
 int main() {
     test_preview_is_immutable_and_ordered();
+    test_unicode_whitespace_schema_v2();
     test_exact_alias_and_safety();
     test_multivalue_preservation();
     test_duplicate_field_names_keep_structural_identity();
