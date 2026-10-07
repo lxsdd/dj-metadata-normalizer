@@ -36,17 +36,17 @@ bool read_file_utf8(const std::wstring& path, std::string& out) {
     }
 
     out.resize(static_cast<std::size_t>(size.QuadPart));
-    DWORD total = 0;
+    std::size_t total = 0;
     while (total < out.size()) {
-        const DWORD remaining = static_cast<DWORD>(
-            (std::min)(out.size() - total, static_cast<std::size_t>((std::numeric_limits<DWORD>::max)())));
+        const std::size_t chunk = (std::min)(out.size() - total, static_cast<std::size_t>((std::numeric_limits<DWORD>::max)()));
+        const DWORD remaining = static_cast<DWORD>(chunk);
         DWORD read = 0;
         if (!ReadFile(handle, out.data() + total, remaining, &read, nullptr)) {
             CloseHandle(handle);
             throw std::runtime_error("Could not read the shared ruleset.");
         }
         if (read == 0) break;
-        total += read;
+        total += static_cast<std::size_t>(read);
     }
     CloseHandle(handle);
     out.resize(total);
