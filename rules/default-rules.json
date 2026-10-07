@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "ruleset_id": "lxsdd.dj-metadata-normalizer.default",
+  "revision": "2026-10-07.1",
+  "rules": [
+    {
+      "id": "safe.trim-whitespace",
+      "enabled": true,
+      "priority": 10,
+      "fields": ["*"],
+      "match": { "kind": "always" },
+      "transform": { "kind": "trim_whitespace" },
+      "safety": "SAFE",
+      "source": {
+        "kind": "builtin",
+        "rationale": "Remove leading and trailing ASCII whitespace without changing non-whitespace metadata."
+      }
+    },
+    {
+      "id": "safe.collapse-whitespace",
+      "enabled": true,
+      "priority": 20,
+      "fields": ["*"],
+      "match": { "kind": "always" },
+      "transform": { "kind": "collapse_whitespace" },
+      "safety": "SAFE",
+      "source": {
+        "kind": "builtin",
+        "rationale": "Collapse repeated ASCII whitespace to one space. Unicode normalization is deliberately not implied."
+      }
+    }
+  ]
+}

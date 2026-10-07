@@ -1,0 +1,47 @@
+name: Core CI
+
+on:
+  push:
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'rules/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: dj-metadata-normalizer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate persisted rules
+        shell: bash
+        run: python tests/validate_rules.py
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
