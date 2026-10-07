@@ -86,18 +86,25 @@ void test_disabled_rule() {
 }
 
 void test_equal_priority_is_stable_by_rule_id() {
-    djmeta::Rule z = trim_rule();
-    z.id = "z-rule";
-    z.priority = 50;
-    djmeta::Rule a = collapse_rule();
-    a.id = "a-rule";
-    a.priority = 50;
+    djmeta::Rule z{
+        "z-rule", true, 50, {"TITLE"},
+        djmeta::MatchKind::Exact, "Y", true,
+        djmeta::TransformKind::ReplaceWith, "Z",
+        djmeta::SafetyClass::Review, "ordering test"
+    };
+    djmeta::Rule a{
+        "a-rule", true, 50, {"TITLE"},
+        djmeta::MatchKind::Exact, "X", true,
+        djmeta::TransformKind::ReplaceWith, "Y",
+        djmeta::SafetyClass::Review, "ordering test"
+    };
 
-    const djmeta::MetadataDocument input{{{"TITLE", {"  A   B  "}}}};
+    const djmeta::MetadataDocument input{{{"TITLE", {"X"}}}};
     const auto result = djmeta::Engine{}.analyze(input, {z, a}, "r5");
-    require(result.changes.size() == 2, "equal-priority rules should both execute");
+    require(result.changes.size() == 2, "equal-priority rules should both execute in id order");
     require(result.changes[0].rule_id == "a-rule", "equal-priority rules must sort by stable rule id");
     require(result.changes[1].rule_id == "z-rule", "second equal-priority rule order mismatch");
+    require(result.canonical_preview.fields[0].values[0] == "Z", "equal-priority chain result mismatch");
 }
 
 void test_fingerprint_contract() {
