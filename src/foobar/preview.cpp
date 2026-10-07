@@ -5,6 +5,8 @@
 #include "rules_runtime.h"
 
 #include <algorithm>
+#include <stdexcept>
+#include <vector>
 
 namespace djmeta_foobar {
 namespace {
@@ -33,6 +35,41 @@ void show_normalization_preview(const metadb_handle_list& handles) {
         const loaded_rules_text loaded = load_rules_text();
         const djmeta::Ruleset ruleset = djmeta::parse_ruleset_json(loaded.json);
 
+        struct analyzed_item {
+            metadb_handle_ptr handle;
+            djmeta::AnalysisResult result;
+        };
+
+        std::vector<analyzed_item> analyzed;
+        analyzed.reserve(static_cast<std::size_t>(handles.get_count()));
+
+        // Phase 1: analyze an exact metadata snapshot for every selected item.
+        for (t_size item_index = 0; item_index < handles.get_count(); ++item_index) {
+            const metadb_handle_ptr& handle = handles[item_index];
+            const auto container = handle->get_info_ref();
+            const file_info& info = container->info();
+            const djmeta::MetadataDocument input = metadata_from_file_info(info);
+
+            analyzed_item item;
+            item.handle = handle;
+            item.result = djmeta::Engine{}.analyze(input, ruleset.rules, ruleset.revision);
+            analyzed.push_back(std::move(item));
+        }
+
+        // Phase 2: stale-input firewall. A large multi-selection can take long enough for
+        // metadata to change while earlier entries are being analyzed. Re-read every item
+        // after the complete analysis and reject the whole preview if any fingerprint moved.
+        for (const analyzed_item& item : analyzed) {
+            const auto current_container = item.handle->get_info_ref();
+            const djmeta::MetadataDocument current =
+                metadata_from_file_info(current_container->info());
+            if (djmeta::fingerprint(current) != item.result.input_fingerprint) {
+                throw std::runtime_error(
+                    "Metadaten haben sich während der Analyse geändert. "
+                    "Die Vorschau wurde als veraltet verworfen; bitte erneut ausführen.");
+            }
+        }
+
         std::string detail;
         std::size_t proposal_count = 0;
         std::size_t safe_count = 0;
@@ -40,15 +77,9 @@ void show_normalization_preview(const metadb_handle_list& handles) {
         std::size_t review_count = 0;
         constexpr std::size_t kDetailLimit = 80;
 
-        for (t_size item_index = 0; item_index < handles.get_count(); ++item_index) {
-            const metadb_handle_ptr& handle = handles[item_index];
-            const auto container = handle->get_info_ref();
-            const file_info& info = container->info();
-            const djmeta::MetadataDocument input = metadata_from_file_info(info);
-            const djmeta::AnalysisResult result =
-                djmeta::Engine{}.analyze(input, ruleset.rules, ruleset.revision);
-
-            for (const djmeta::Proposal& proposal : result.proposals) {
+        // Phase 3: only validated snapshots are rendered.
+        for (const analyzed_item& item : analyzed) {
+            for (const djmeta::Proposal& proposal : item.result.proposals) {
                 ++proposal_count;
                 switch (proposal.safety) {
                 case djmeta::SafetyClass::Safe: ++safe_count; break;
@@ -59,9 +90,9 @@ void show_normalization_preview(const metadb_handle_list& handles) {
                 if (proposal_count > kDetailLimit) continue;
 
                 detail += "\n";
-                detail += handle->get_path();
+                detail += item.handle->get_path();
                 detail += " [";
-                detail += std::to_string(handle->get_subsong_index());
+                detail += std::to_string(item.handle->get_subsong_index());
                 detail += "]\n  [";
                 detail += djmeta::to_string(proposal.safety);
                 detail += "] ";
