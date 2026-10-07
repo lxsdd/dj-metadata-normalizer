@@ -56,6 +56,27 @@ for token in [
     if token not in preview:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: stale-input preview guard missing " + token)
 
+planner = (foobar / "titleformat_planner.cpp").read_text(encoding="utf-8")
+for token in [
+    "titleformat_compiler::get()",
+    "compiled->run_simple",
+    "__meta_add_unsafe_ex",
+    "meta_add_value_ex",
+]:
+    if token not in planner:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: host-native planner contract missing " + token)
+for forbidden in [
+    "$if(",
+    "%artist%",
+    "std::filesystem",
+    "MoveFile",
+    "CopyFile",
+    "filesystem::g_move",
+    "filesystem::g_copy",
+]:
+    if forbidden in planner:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: planner bypasses host-native read-only boundary: " + forbidden)
+
 rules_runtime = (foobar / "rules_runtime.cpp").read_text(encoding="utf-8")
 if "CreateFileW" not in rules_runtime or "GENERIC_READ" not in rules_runtime:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: shared rules are not opened read-only")
