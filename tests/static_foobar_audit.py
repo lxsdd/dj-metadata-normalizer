@@ -47,6 +47,15 @@ for token in [
     if token not in project:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: project contract missing " + token)
 
+preview = (foobar / "preview.cpp").read_text(encoding="utf-8")
+for token in [
+    "item.result.input_fingerprint",
+    "djmeta::fingerprint(current)",
+    "Die Vorschau wurde als veraltet verworfen",
+]:
+    if token not in preview:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: stale-input preview guard missing " + token)
+
 rules_runtime = (foobar / "rules_runtime.cpp").read_text(encoding="utf-8")
 if "CreateFileW" not in rules_runtime or "GENERIC_READ" not in rules_runtime:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: shared rules are not opened read-only")
