@@ -16,5 +16,6 @@ struct Ruleset {
 };
 
 Ruleset parse_ruleset_json(std::string_view json);
+MetadataDocument parse_metadata_vectors_json(std::string_view json);
 
 } // namespace djmeta
