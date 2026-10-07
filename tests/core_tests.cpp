@@ -85,6 +85,21 @@ void test_disabled_rule() {
     require(result.canonical_preview == input, "disabled rule changed preview");
 }
 
+void test_equal_priority_is_stable_by_rule_id() {
+    djmeta::Rule z = trim_rule();
+    z.id = "z-rule";
+    z.priority = 50;
+    djmeta::Rule a = collapse_rule();
+    a.id = "a-rule";
+    a.priority = 50;
+
+    const djmeta::MetadataDocument input{{{"TITLE", {"  A   B  "}}}};
+    const auto result = djmeta::Engine{}.analyze(input, {z, a}, "r5");
+    require(result.changes.size() == 2, "equal-priority rules should both execute");
+    require(result.changes[0].rule_id == "a-rule", "equal-priority rules must sort by stable rule id");
+    require(result.changes[1].rule_id == "z-rule", "second equal-priority rule order mismatch");
+}
+
 void test_fingerprint_contract() {
     const djmeta::MetadataDocument a{{{"ARTIST", {"A", "B"}}, {"TITLE", {"Track"}}}};
     const djmeta::MetadataDocument b = a;
@@ -105,6 +120,7 @@ int main() {
     test_exact_alias_and_safety();
     test_multivalue_preservation();
     test_disabled_rule();
+    test_equal_priority_is_stable_by_rule_id();
     test_fingerprint_contract();
     std::cout << "PASS: djmeta core deterministic preview tests\n";
     return 0;
