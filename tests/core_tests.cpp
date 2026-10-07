@@ -23,7 +23,8 @@ djmeta::Rule trim_rule() {
         djmeta::MatchKind::Always, "", false,
         djmeta::TransformKind::TrimWhitespace, "",
         djmeta::SafetyClass::Safe,
-        "Remove leading and trailing ASCII whitespace."
+        "Remove leading and trailing ASCII whitespace.",
+        "builtin", ""
     };
 }
 
@@ -33,7 +34,8 @@ djmeta::Rule collapse_rule() {
         djmeta::MatchKind::Always, "", false,
         djmeta::TransformKind::CollapseWhitespace, "",
         djmeta::SafetyClass::Safe,
-        "Collapse repeated ASCII whitespace."
+        "Collapse repeated ASCII whitespace.",
+        "builtin", ""
     };
 }
 
@@ -61,7 +63,8 @@ void test_exact_alias_and_safety() {
         djmeta::MatchKind::Exact, "defected records", false,
         djmeta::TransformKind::ReplaceWith, "Defected",
         djmeta::SafetyClass::Review,
-        "Example only; collection aliases must be migrated from qualified user rules."
+        "Example only; collection aliases must be migrated from qualified user rules.",
+        "manual", ""
     };
     const djmeta::MetadataDocument input{{{"label", {"Defected Records"}}}};
     const auto result = djmeta::Engine{}.analyze(input, {alias}, "r2");
@@ -94,7 +97,7 @@ void test_equal_priority_is_stable_by_rule_id() {
         "z-rule", true, 50, {"TITLE"},
         djmeta::MatchKind::Exact, "Y", true,
         djmeta::TransformKind::ReplaceWith, "Z",
-        djmeta::SafetyClass::Review, "ordering test"
+        djmeta::SafetyClass::Review, "ordering test", "manual", ""
     };
     djmeta::Rule a{
         "a-rule", true, 50, {"TITLE"},
