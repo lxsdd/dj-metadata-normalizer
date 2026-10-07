@@ -18,12 +18,12 @@ public:
     unsigned get_num_items() override { return 1; }
 
     void get_item_name(unsigned index, pfc::string_base& output) override {
-        PFC_ASSERT(index == 0);
+        if (index != 0) return;
         output = "Metadaten normalisieren (Vorschau)...";
     }
 
     GUID get_item_guid(unsigned index) override {
-        PFC_ASSERT(index == 0);
+        if (index != 0) return pfc::guid_null;
         return guids::preview_normalization;
     }
 
@@ -50,8 +50,7 @@ public:
         unsigned index,
         metadb_handle_list_cref data,
         const GUID&) override {
-        PFC_ASSERT(index == 0);
-        if (data.get_count() == 0) return;
+        if (index != 0 || data.get_count() == 0) return;
 
         metadb_handle_list retained = data;
         completion_notify::ptr notify = fb2k::makeCompletionNotify(
