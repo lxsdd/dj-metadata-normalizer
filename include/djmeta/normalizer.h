@@ -33,6 +33,8 @@ struct Rule {
     std::string replacement;
     SafetyClass safety = SafetyClass::Review;
     std::string rationale;
+    std::string source_kind;
+    std::string source_reference;
 };
 
 struct Change {
