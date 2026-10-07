@@ -153,6 +153,31 @@ void require_invalid_ruleset(const std::string& json, const char* message) {
     require(false, message);
 }
 
+void test_bridge_metadata_vector_loader() {
+    const std::string json =
+        R"([{"name":"ARTIST","values":["A","B"]},{"name":"ARTIST","values":["A; B"]},)"
+        R"({"name":"EMPTY","values":[""]},{"name":"TITLE","values":["caf\u00e9"]}])";
+    const auto doc = djmeta::parse_metadata_vectors_json(json);
+    require(doc.fields.size() == 4, "metadata vector field count mismatch");
+    require(doc.fields[0].name == "ARTIST" && doc.fields[0].values.size() == 2,
+            "true multivalue metadata was not preserved");
+    require(doc.fields[1].name == "ARTIST" && doc.fields[1].values[0] == "A; B",
+            "duplicate field entry or literal separator was altered");
+    require(doc.fields[2].values.size() == 1 && doc.fields[2].values[0].empty(),
+            "empty metadata value was not preserved");
+    require(doc.fields[3].values[0] == "caf\xC3\xA9", "metadata unicode escape decode mismatch");
+
+    require_invalid_ruleset(
+        R"({"schema_version":1,"ruleset_id":"x","revision":"r","rules":[],"unknown":true})",
+        "unknown top-level property was accepted");
+
+    try {
+        (void)djmeta::parse_metadata_vectors_json(R"([{"name":"TITLE","values":[],"unknown":1}])");
+        require(false, "unknown metadata-vector property was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+}
+
 void test_persisted_ruleset_loader() {
     const auto ruleset = djmeta::parse_ruleset_json(read_text("rules/default-rules.json"));
     require(ruleset.schema_version == 1, "persisted schema version mismatch");
@@ -181,9 +206,6 @@ void test_persisted_ruleset_loader() {
     require_invalid_ruleset(
         R"({"schema_version":1,"ruleset_id":"x","revision":"r","rules":[{"id":"safe.x","enabled":true,"priority":1,"fields":["TITLE"],"match":{"kind":"always"},"transform":{"kind":"replace_with","replacement":"X"},"safety":"SAFE","source":{"kind":"manual","rationale":"unsafe"}}]})",
         "semantic replacement was accepted as SAFE");
-    require_invalid_ruleset(
-        R"({"schema_version":1,"ruleset_id":"x","revision":"r","rules":[],"unknown":true})",
-        "unknown top-level property was accepted");
 }
 
 void test_fingerprint_contract() {
@@ -210,6 +232,7 @@ int main() {
     test_duplicate_field_names_keep_structural_identity();
     test_disabled_rule();
     test_equal_priority_is_stable_by_rule_id();
+    test_bridge_metadata_vector_loader();
     test_persisted_ruleset_loader();
     test_fingerprint_contract();
     std::cout << "PASS: djmeta core deterministic preview tests\n";
