@@ -38,6 +38,7 @@ struct Rule {
 };
 
 struct Change {
+    std::size_t field_index = 0;
     std::string field;
     std::size_t value_index = 0;
     std::string original_value;
@@ -49,10 +50,24 @@ struct Change {
     bool operator==(const Change&) const = default;
 };
 
+struct Proposal {
+    std::size_t field_index = 0;
+    std::string field;
+    std::size_t value_index = 0;
+    std::string original_value;
+    std::string proposed_value;
+    SafetyClass safety = SafetyClass::Review;
+    std::vector<std::string> rule_ids;
+    std::vector<std::string> rationales;
+
+    bool operator==(const Proposal&) const = default;
+};
+
 struct AnalysisResult {
     std::string input_fingerprint;
     std::string ruleset_revision;
     std::vector<Change> changes;
+    std::vector<Proposal> proposals;
     MetadataDocument canonical_preview;
 };
 
