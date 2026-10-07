@@ -2,6 +2,7 @@ name: foobar Preview Component
 
 on:
   push:
+    branches: [ main ]
     paths:
       - 'include/**'
       - 'src/core/**'
@@ -14,6 +15,16 @@ on:
       - '.github/workflows/foobar.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'include/**'
+      - 'src/core/**'
+      - 'src/foobar/**'
+      - 'rules/**'
+      - 'scripts/**'
+      - 'tests/static_foobar_audit.py'
+      - 'foo_dj_metadata_normalizer.vcxproj'
+      - 'VERSION'
+      - '.github/workflows/foobar.yml'
   workflow_dispatch:
 
 permissions:
@@ -37,7 +48,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 20
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         platform: [Win32, x64]
     steps:
@@ -47,6 +58,7 @@ jobs:
         shell: pwsh
         run: ./scripts/build-foobar.ps1 -Platform '${{ matrix.platform }}' -Configuration Release -PlatformToolset v143
       - name: Upload DLL
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: foo-dj-metadata-normalizer-${{ matrix.platform }}
