@@ -1,8 +1,21 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "ruleset_id": "lxsdd.dj-metadata-normalizer.default",
-  "revision": "2026-10-07.1",
+  "revision": "2026-10-07.2",
   "rules": [
+    {
+      "id": "safe.normalize-unicode-whitespace",
+      "enabled": true,
+      "priority": 5,
+      "fields": ["*"],
+      "match": { "kind": "always" },
+      "transform": { "kind": "normalize_unicode_whitespace" },
+      "safety": "SAFE",
+      "source": {
+        "kind": "builtin",
+        "rationale": "Map Unicode White_Space code points to ASCII space while preserving all non-whitespace UTF-8 bytes."
+      }
+    },
     {
       "id": "safe.trim-whitespace",
       "enabled": true,
@@ -13,7 +26,7 @@
       "safety": "SAFE",
       "source": {
         "kind": "builtin",
-        "rationale": "Remove leading and trailing ASCII whitespace without changing non-whitespace metadata."
+        "rationale": "Remove leading and trailing ASCII whitespace after Unicode whitespace normalization."
       }
     },
     {
@@ -26,7 +39,7 @@
       "safety": "SAFE",
       "source": {
         "kind": "builtin",
-        "rationale": "Collapse repeated ASCII whitespace to one space. Unicode normalization is deliberately not implied."
+        "rationale": "Collapse repeated ASCII whitespace to one space after Unicode whitespace normalization."
       }
     }
   ]
