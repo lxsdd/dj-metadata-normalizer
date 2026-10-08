@@ -311,6 +311,21 @@ void show_column_menu(HWND dialog, PreviewState& state, LPARAM pointer) {
     }
 }
 
+// The header is a child of the ListView, not the dialog. Subclassing it
+// ensures keyboard/mouse WM_CONTEXTMENU reliably reaches our column picker.
+LRESULT CALLBACK batch_header_proc(
+    HWND header, UINT message, WPARAM wp, LPARAM lp,
+    UINT_PTR subclass_id, DWORD_PTR ref_data) {
+    auto* state = reinterpret_cast<PreviewState*>(ref_data);
+    if (message == WM_CONTEXTMENU && state && state->list) {
+        show_column_menu(GetParent(state->list), *state, lp);
+        return 0;
+    }
+    if (message == WM_NCDESTROY)
+        RemoveWindowSubclass(header, batch_header_proc, subclass_id);
+    return DefSubclassProc(header, message, wp, lp);
+}
+
 void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
     const RoutePreviewChoice choice = read_choice(dialog);
     std::vector<std::size_t> selected;
@@ -424,6 +439,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         add_column(state->list, 3, L"Status", 160);
         state->layout = load_batch_table_layout();
         apply_column_layout(*state);
+        const HWND batch_header = ListView_GetHeader(state->list);
+        if (batch_header &&
+            !SetWindowSubclass(batch_header, batch_header_proc, 1,
+                reinterpret_cast<DWORD_PTR>(state)))
+            throw std::runtime_error("Unable to attach batch column menu.");
         for (const int id : {IDC_BATCH_PROFILE_NAME, IDC_BATCH_DESTINATION,
                              IDC_BATCH_PATTERN})
             SendDlgItemMessageW(dialog, id, EM_LIMITTEXT, 16384, 0);
@@ -487,6 +507,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
 
     if (message == WM_CONTEXTMENU &&
         reinterpret_cast<HWND>(wp) == ListView_GetHeader(state->list)) {
+        // Compatibility fallback if the control forwards header events.
         show_column_menu(dialog, *state, lp);
         return TRUE;
     }
