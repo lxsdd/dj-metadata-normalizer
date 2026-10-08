@@ -271,3 +271,39 @@ No background write or automatic file move is permitted.
 The public foobar2000 SDK exposes `titleformat_compiler` as a core service and a standard `file_info`-based evaluation path. The planner therefore evaluates naming/routing expressions against an in-memory canonical metadata projection using the host compiler; it does not implement foobar title-format syntax itself.
 
 The public SDK also exposes low-level filesystem move/copy primitives and file-operation notifications, but the project has not yet identified a parameterized public service that executes foobar's built-in File Operations command with its complete user policy. Therefore the current milestone is deliberately planning-only. The eventual executor remains gated on an explicit host-policy mapping for timestamp and File Operations behavior.
+
+
+## Portable batch preflight engine (implementation milestone)
+
+The C++20 core now defines `include/djmeta/batch_plan.h` and
+`src/core/batch_plan.cpp` as an **analysis-only, pure** batch planner. It is
+explicitly separate from the future foobar execution and UI adapters.
+
+The caller supplies each physical file exactly once, including:
+
+- host-canonical source/destination identity keys (the portable engine does
+  not guess Windows path equivalence or foobar path normalization);
+- original and selected canonical metadata fingerprints;
+- ruleset revision, route/profile, naming expression and manual override;
+- host-observed destination presence and, when present, an identity guard;
+- qualified external-CUE linkage and reference postimage fingerprint;
+- separately approved sidecar policies.
+
+The engine computes a SHA-256 plan fingerprint using length-prefixed fields
+and returns per-item statuses: Ready, Unchanged, NeedsOverwriteApproval or
+Blocked. It never opens files, writes tags, parses Cue files or initiates a
+move/copy. `BatchApproval` binds a single bulk-overwrite confirmation to
+the exact snapshot; two sources mapped to one destination still block.
+
+CI tests cover 100 existing destinations under one reviewed batch consent,
+stale approval when a target identity changes, item-level overrides,
+intra-batch target collisions, selected-source collisions, subsong duplicate
+physical operations, CUE dependency gating, companion authorization and
+immutable fingerprints.
+
+**Not yet delivered:** foobar-specific target probes/identity derivation,
+external CUE parser and reference rewrite, interactive routing UI,
+native Apply/Cancel dialogs, output of plans via the shared C ABI, or an
+executor. The `ready_to_apply` core result is advisory only; the future
+executor must re-read all source and destination guards immediately before
+any mutation.
