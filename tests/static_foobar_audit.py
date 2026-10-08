@@ -122,7 +122,7 @@ for label, source, token in [
     ("metadata and file tab control", batch_table_dialog, "TCN_SELCHANGE"),
     ("metadata diff view", batch_table_dialog, "IDC_METADATA_LIST"),
     ("metadata safety", batch_table_dialog, "item.safety"),
-    ("metadata rule provenance", batch_table_dialog, "item.rule_ids"),
+    ("metadata rule provenance in production tooltip", batch_table_dialog, "entry.rule_ids"),
     ("metadata sort", batch_table_dialog, "sort_metadata_diff_rows"),
     ("source path presentation only", batch_table_dialog, "display_file_path"),
     ("unified tabs resource", resources, "IDC_BATCH_TABS"),
