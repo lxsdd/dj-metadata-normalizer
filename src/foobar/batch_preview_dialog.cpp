@@ -36,7 +36,22 @@ struct PreviewEntry {
     std::string input_fingerprint;
 };
 
+struct ResizableControl {
+    HWND window = nullptr;
+    RECT original{};
+    bool stretch_width = false;
+    bool stretch_height = false;
+    bool shift_down = false;
+    bool shift_right = false;
+};
+
 struct PreviewState {
+    HWND dialog = nullptr;
+    int initial_client_width = 0;
+    int initial_client_height = 0;
+    int initial_window_width = 0;
+    int initial_window_height = 0;
+    std::vector<ResizableControl> resize_controls;
     std::vector<PreviewEntry> entries;
     djmeta::BatchPreviewTable table;
     RoutePreviewChoice current_choice;
@@ -324,6 +339,62 @@ LRESULT CALLBACK batch_header_proc(
     if (message == WM_NCDESTROY)
         RemoveWindowSubclass(header, batch_header_proc, subclass_id);
     return DefSubclassProc(header, message, wp, lp);
+}
+
+void capture_resize_layout(PreviewState& state) {
+    const HWND dialog = state.dialog;
+    if (!dialog || !state.list) return;
+    RECT client{}, window_rect{}, list_rect{};
+    GetClientRect(dialog, &client);
+    GetWindowRect(dialog, &window_rect);
+    GetWindowRect(state.list, &list_rect);
+    MapWindowPoints(HWND_DESKTOP, dialog,
+                    reinterpret_cast<POINT*>(&list_rect), 2);
+    state.initial_client_width = client.right;
+    state.initial_client_height = client.bottom;
+    state.initial_window_width = window_rect.right - window_rect.left;
+    state.initial_window_height = window_rect.bottom - window_rect.top;
+    state.resize_controls.clear();
+
+    EnumChildWindows(dialog, [](HWND control, LPARAM state_ptr) -> BOOL {
+        auto& current = *reinterpret_cast<PreviewState*>(state_ptr);
+        if (GetParent(control) != current.dialog) return TRUE;
+        ResizableControl layout;
+        layout.window = control;
+        GetWindowRect(control, &layout.original);
+        MapWindowPoints(HWND_DESKTOP, current.dialog,
+                        reinterpret_cast<POINT*>(&layout.original), 2);
+        const int id = GetDlgCtrlID(control);
+        layout.stretch_width =
+            id == IDC_BATCH_LIST || id == IDC_BATCH_PROFILE_NAME ||
+            id == IDC_BATCH_DESTINATION || id == IDC_BATCH_PATTERN ||
+            (id == -1 && layout.original.right >
+             current.initial_client_width - 24);
+        layout.stretch_height = id == IDC_BATCH_LIST;
+        layout.shift_down = id != IDC_BATCH_LIST &&
+            layout.original.top >= current.resize_controls.front().original.bottom;
+        layout.shift_right = id == IDC_BATCH_APPLY_SELECTED ||
+                             id == IDC_BATCH_APPLY_ALL || id == IDCANCEL;
+        current.resize_controls.push_back(layout);
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&state));
+}
+
+void resize_batch_dialog(PreviewState& state, int width, int height) {
+    if (state.resize_controls.empty() || width < 1 || height < 1) return;
+    const int dx = width - state.initial_client_width;
+    const int dy = height - state.initial_client_height;
+    for (const auto& child : state.resize_controls) {
+        if (!IsWindow(child.window)) continue;
+        const RECT& orig = child.original;
+        const int x = orig.left + (child.shift_right ? dx : 0);
+        const int y = orig.top + (child.shift_down ? dy : 0);
+        const int w = (orig.right - orig.left) + (child.stretch_width ? dx : 0);
+        const int h = (orig.bottom - orig.top) + (child.stretch_height ? dy : 0);
+        SetWindowPos(child.window, nullptr, x, y,
+                     (std::max)(8, w), (std::max)(8, h),
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 }
 
 void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
