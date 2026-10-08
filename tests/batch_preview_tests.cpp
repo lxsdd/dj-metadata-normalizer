@@ -27,8 +27,8 @@ int main() {
     using djmeta::raw_relative_path_lexically_safe;
     for (const std::string& valid : {
              std::string("Album/Artist - Track.mp3"),
-             std::string("A\\\\B\\\\C.flac"),
-             std::string("Bj\\xC3\\xB6rk.mp3"),
+             std::string("A\\B\\C.flac"),
+             std::string("Bj\xC3\xB6rk.mp3"),
              std::string(".profile")})
         check(raw_relative_path_lexically_safe(valid),
               "legitimate relative path must pass lexical checks");
@@ -40,8 +40,8 @@ int main() {
              std::string("NUL.mp3"), std::string("con"),
              std::string("A/LpT9.txt"), std::string("x. "),
              std::string("x."), std::string("name?.mp3"),
-             std::string("name|x"), std::string("line\\nfeed.mp3"),
-             std::string("nul\\0byte.mp3", 12), std::string("\\xC3\\x28", 2)})
+             std::string("name|x"), std::string("line\nfeed.mp3"),
+             std::string("nul\0byte.mp3", 12), std::string("\xC3\x28", 2)})
         check(!raw_relative_path_lexically_safe(dangerous),
               "unsafe Title Formatting output must not resemble an approved target");
 
