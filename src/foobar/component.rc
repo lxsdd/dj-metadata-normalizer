@@ -18,8 +18,8 @@ BEGIN
     EDITTEXT        IDC_CAPTION_LIVESETS, 122, 103, 349, 15, ES_AUTOHSCROLL | WS_TABSTOP
     LTEXT           "Prepare Tracks:", -1, 12, 137, 105, 12
     EDITTEXT        IDC_CAPTION_PREPARE, 122, 133, 349, 15, ES_AUTOHSCROLL | WS_TABSTOP
-    LTEXT           "Menu visibility and order: Preferences > Display > Context Menu.", -1, 12, 163, 464, 12
-    LTEXT           "Apply saves; Cancel discards; Reset stages default captions.", -1, 12, 179, 464, 12
+    LTEXT           "Show/hide: Display > Context Menu.", -1, 12, 163, 464, 12
+    LTEXT           "Apply saves. Cancel discards. Reset restores defaults.", -1, 12, 179, 464, 12
 END
 
 IDD_BATCH_PREVIEW DIALOGEX 0, 0, 710, 396
