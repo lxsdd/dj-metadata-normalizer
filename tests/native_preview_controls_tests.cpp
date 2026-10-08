@@ -76,9 +76,14 @@ int main() {
               (flags & LVS_OWNERDATA) != 0,
               "master/detail controls support virtualized report view");
     }
+    HWND track_filter = GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER);
+    check(track_filter != nullptr &&
+          (static_cast<DWORD>(GetWindowLongPtrW(track_filter, GWL_STYLE)) & 0x3u) == CBS_DROPDOWNLIST,
+          "real native status filter is a non-editable combo");
     djmeta_foobar::align_native_preview_form(dialog);
     const int rows[][2] = {
         {IDC_METADATA_FILTER_LABEL, IDC_METADATA_FILTER},
+        {IDC_METADATA_TRACK_FILTER_LABEL, IDC_METADATA_TRACK_FILTER},
         {IDC_BATCH_ROUTE_LABEL, IDC_BATCH_PROFILE_PICKER},
         {IDC_BATCH_DEST_LABEL, IDC_BATCH_DESTINATION},
         {IDC_BATCH_PATTERN_LABEL, IDC_BATCH_PATTERN},

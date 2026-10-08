@@ -238,4 +238,12 @@ if 'align_native_preview_form(dialog)' not in batch_table_dialog:
 if 'GetComboBoxInfo' not in native_controls or 'CreateDialogParamW' not in gui_test:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: native runtime resource/alignment test missing")
 
+if 'IDC_METADATA_TRACK_FILTER' not in resources or 'IDC_METADATA_TRACK_FILTER_LABEL' not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: track discovery widgets missing")
+if 'id == IDC_METADATA_TRACK_FILTER && HIWORD(wp) == CBN_SELCHANGE' not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: track discovery control event not handled")
+if 'djmeta::filter_track_view' not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: filtered master data not wired")
+if '{IDC_METADATA_TRACK_FILTER_LABEL, IDC_METADATA_TRACK_FILTER}' not in native_controls:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: native status filter alignment not wired")
 print("PASS: foobar preview is analysis-only; no tag/file write path is present")

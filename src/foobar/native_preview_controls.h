@@ -35,6 +35,7 @@ inline bool align_label_to_input(HWND dialog, int label_id, int input_id) {
 inline void align_native_preview_form(HWND dialog) {
     constexpr int rows[][2] = {
         {IDC_METADATA_FILTER_LABEL, IDC_METADATA_FILTER},
+        {IDC_METADATA_TRACK_FILTER_LABEL, IDC_METADATA_TRACK_FILTER},
         {IDC_BATCH_ROUTE_LABEL, IDC_BATCH_PROFILE_PICKER},
         {IDC_BATCH_DEST_LABEL, IDC_BATCH_DESTINATION},
         {IDC_BATCH_PATTERN_LABEL, IDC_BATCH_PATTERN},

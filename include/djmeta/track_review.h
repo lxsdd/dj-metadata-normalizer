@@ -10,6 +10,7 @@
 namespace djmeta {
 
 enum class MetadataFocus { Music, Extended, All };
+enum class TrackDiscovery { All, Changed, NeedsReview };
 
 struct TrackReviewSummary {
     std::size_t source_index = 0;
@@ -30,6 +31,12 @@ std::vector<TrackReviewSummary> summarize_track_changes(
 std::vector<MetadataDiffRow> selected_track_diffs(
     const std::vector<MetadataDiffRow>& proposals,
     std::size_t source_index, MetadataFocus focus);
+
+// Filter track identities AFTER sorting; no proposal or source is modified.
+std::vector<std::size_t> filter_track_view(
+    const std::vector<TrackReviewSummary>& summaries,
+    const std::vector<std::size_t>& sorted_source_indices,
+    TrackDiscovery discovery);
 
 // Sorting changes presentation only; source index identity remains stable.
 std::vector<std::size_t> sort_track_summaries(

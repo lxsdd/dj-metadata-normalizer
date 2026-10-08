@@ -48,6 +48,16 @@ int main(){
     check((by_name==std::vector<std::size_t>{1,2,0}) &&
           (by_review==std::vector<std::size_t>{0,1,2}),
           "stable master row sort and index mapping");
+    const auto all_tracks=filter_track_view(all,by_name,TrackDiscovery::All);
+    const auto changed_tracks=filter_track_view(all,by_name,TrackDiscovery::Changed);
+    const auto review_tracks=filter_track_view(all,by_name,TrackDiscovery::NeedsReview);
+    check(all_tracks==by_name &&
+          (changed_tracks==std::vector<std::size_t>{1,0}) &&
+          (review_tracks==std::vector<std::size_t>{1,0}) &&
+          filter_track_view(all,{2},TrackDiscovery::NeedsReview).empty() &&
+          filter_track_view(all,{999,1},TrackDiscovery::Changed)==
+            std::vector<std::size_t>{1},
+          "discovery retains sort identity and handles empty/invalid views");
     check(proposals[0].field=="DISCOGS_RELEASE_CREDITS" &&
           proposals[4].field=="X_CUSTOM_FIELD",
           "no mutation or loss of secondary metadata");
