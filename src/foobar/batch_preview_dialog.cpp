@@ -1284,7 +1284,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                         const auto& entry = state->entries[source_row];
                         const std::wstring detail = from_utf8(
                             entry.source_probe_detail +
-                            "\\nDestination and CUE links still require final host preflight.");
+                            "\nDestination and CUE links still require final host preflight.");
                         lstrcpynW(tip->pszText, detail.c_str(), tip->cchTextMax);
                     }
                 }
