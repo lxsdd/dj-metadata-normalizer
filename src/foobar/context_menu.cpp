@@ -49,16 +49,16 @@ public:
         if (index > 4) return false;
         if (index == 0) {
             output =
-                "Analysiert die ausgewählten Tracks mit dem gemeinsamen Normalizer-Regelbestand "
-                "und zeigt Original- und Vorschlagswerte. Schreibt keine Tags.";
+                "Analyzes selected tracks with the shared normalizer ruleset "
+                "and displays original and proposed values. Does not write tags.";
         } else if (index == 4) {
             output =
-                "Oeffnet den nativen Vorbereitung-Dialog mit frei aenderbarem Zielordner "
-                "und Title-Formatting-Muster. Dies ist nur eine Vorschau, ohne Schreibaktionen.";
+                "Opens the native Prepare Tracks dialog with an editable destination "
+                "and Title Formatting expression. Preview only; no file or tag writes.";
         } else {
             output =
-                "Berechnet die gewählte historische foobar-File-Operations-Vorlage gegen "
-                "eine SAFE-Metadatenvorschau. Keine Tags, keine Dateiumbenennung, kein Move/Copy.";
+                "Evaluates the selected legacy foobar File Operations profile against "
+                "SAFE-only staged metadata. No tag writes, renames, moves or copies.";
         }
         return true;
     }
@@ -85,8 +85,8 @@ public:
             [retained, index](unsigned status) {
                 if (status != metadb_io::load_info_success) {
                     popup_message::g_show(
-                        "Die Metadaten konnten nicht vollständig geladen werden. "
-                        "Es wurde nichts verändert.",
+                        "Unable to load all metadata. "
+                        "Nothing was changed.",
                         "DJ Metadata Normalizer");
                     return;
                 }
