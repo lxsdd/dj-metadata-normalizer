@@ -14,6 +14,7 @@
 
 #include "djmeta/batch_preview.h"
 #include "djmeta/metadata_diff.h"
+#include "djmeta/review_decisions.h"
 #include "djmeta/track_review.h"
 #include "djmeta/table_layout.h"
 #include "djmeta/staging.h"
@@ -37,6 +38,7 @@ struct PreviewEntry {
     djmeta::MetadataDocument staged;
     djmeta::BatchPreviewInputRow input;
     std::string input_fingerprint;
+    std::string route_expression; // per-row foobar titleformat for review recomputation
 };
 
 struct ResizableControl {
@@ -66,6 +68,7 @@ struct PreviewState {
     HWND metadata_track_list = nullptr;
     HWND metadata_filter = nullptr;
     HWND metadata_track_filter = nullptr;
+    HWND metadata_scope = nullptr;
     HWND tabs = nullptr;
     bool show_metadata = true;
     int metadata_sort_column = 0;
@@ -74,12 +77,14 @@ struct PreviewState {
     bool track_sort_descending = false;
     bool updating_track_selection = false;
     std::size_t selected_track_index = 0;
+    std::size_t focused_track_index = (std::numeric_limits<std::size_t>::max)();
     djmeta::MetadataFocus metadata_focus = djmeta::MetadataFocus::Music;
     djmeta::TrackDiscovery track_discovery = djmeta::TrackDiscovery::All;
     std::vector<djmeta::TrackReviewSummary> track_summaries;
     std::vector<std::size_t> track_view_order;
     std::vector<djmeta::MetadataDiffRow> focused_metadata_rows;
     std::vector<djmeta::AnalysisResult> analyses;
+    std::vector<std::vector<djmeta::ReviewDecision>> review_decisions;
     std::vector<djmeta::MetadataDiffRow> metadata_rows;
     std::vector<std::size_t> metadata_view_order;
     std::vector<std::string> source_labels;
@@ -348,6 +353,11 @@ void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
     ShowWindow(state.metadata_track_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_filter, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_track_filter, metadata ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.metadata_scope, metadata ? SW_SHOW : SW_HIDE);
+    for (int id : {IDC_METADATA_ACCEPT, IDC_METADATA_REJECT,
+                   IDC_METADATA_RESET, IDC_METADATA_MANUAL_INPUT,
+                   IDC_METADATA_USE_VALUE})
+        ShowWindow(GetDlgItem(dialog,id), metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER_LABEL),
         metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_FILTER_LABEL),
@@ -538,6 +548,7 @@ void capture_resize_layout(PreviewState& state) {
             id == IDC_BATCH_LIST || id == IDC_METADATA_LIST ||
             id == IDC_BATCH_TABS || id == IDC_BATCH_PROFILE_PICKER ||
             id == IDC_BATCH_DESTINATION || id == IDC_BATCH_PATTERN ||
+            id == IDC_METADATA_MANUAL_INPUT ||
             (id == -1 && layout.original.right >
              current.initial_client_width - 24);
         layout.stretch_height = id == IDC_BATCH_LIST ||
@@ -547,7 +558,8 @@ void capture_resize_layout(PreviewState& state) {
             id != IDC_METADATA_TRACK_LIST &&
             id != IDC_BATCH_TABS &&
             layout.original.top >= current.initial_list_bottom;
-        layout.shift_right = id == IDC_BATCH_APPLY_SELECTED ||
+        layout.shift_right = id == IDC_METADATA_USE_VALUE ||
+                             id == IDC_BATCH_APPLY_SELECTED ||
                              id == IDC_BATCH_APPLY_ALL || id == IDCANCEL;
         current.resize_controls.push_back(layout);
         return TRUE;
@@ -597,6 +609,7 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
         verify_snapshot(entry);
         entry.input.profile = choice.display_name;
         entry.input.destination_root = choice.destination_root;
+        entry.route_expression = choice.titleformat_expression;
         entry.input.raw_relative_path.clear();
         entry.input.filesystem_target_checked = false;
         entry.input.cue_dependencies_checked = false;
@@ -648,6 +661,7 @@ std::vector<PreviewEntry> capture_preview(
         entry.input.physical_id = handle->get_path();
         entry.input.profile = choice.display_name;
         entry.input.destination_root = choice.destination_root;
+        entry.route_expression = choice.titleformat_expression;
         entry.input.semantic_proposals_pending = staged.unresolved_proposals > 0;
         entry.input.physical_source_qualified =
             handle->get_subsong_index() == 0 &&
@@ -679,10 +693,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         state->metadata_track_list = GetDlgItem(dialog, IDC_METADATA_TRACK_LIST);
         state->metadata_filter = GetDlgItem(dialog, IDC_METADATA_FILTER);
         state->metadata_track_filter = GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER);
+        state->metadata_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
         state->tabs = GetDlgItem(dialog, IDC_BATCH_TABS);
         if (!state->list || !state->metadata_list || !state->metadata_track_list ||
             !state->metadata_filter || !state->metadata_track_filter ||
-            !state->tabs) return FALSE;
+            !state->metadata_scope || !state->tabs) return FALSE;
         for (const wchar_t* name : {L"Metadata changes", L"File locations"}) {
             TCITEMW tab{};
             tab.mask = TCIF_TEXT;
@@ -700,10 +715,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         ListView_SetExtendedListViewStyle(state->metadata_list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP |
             LVS_EX_HEADERDRAGDROP);
-        add_column(state->metadata_list, 0, L"Field", 88);
-        add_column(state->metadata_list, 1, L"Original", 120);
-        add_column(state->metadata_list, 2, L"Proposed", 120);
-        add_column(state->metadata_list, 3, L"Safety", 65);
+        add_column(state->metadata_list, 0, L"Field", 78);
+        add_column(state->metadata_list, 1, L"Original", 95);
+        add_column(state->metadata_list, 2, L"Proposed", 95);
+        add_column(state->metadata_list, 3, L"Safety", 57);
+        add_column(state->metadata_list, 4, L"Decision", 68);
         for (const wchar_t* focus : {L"Music tags", L"Extended tags", L"All fields"})
             SendDlgItemMessageW(dialog, IDC_METADATA_FILTER, CB_ADDSTRING,
                 0, reinterpret_cast<LPARAM>(focus));
@@ -712,6 +728,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             SendDlgItemMessageW(dialog, IDC_METADATA_TRACK_FILTER, CB_ADDSTRING,
                 0, reinterpret_cast<LPARAM>(status));
         SendDlgItemMessageW(dialog, IDC_METADATA_TRACK_FILTER, CB_SETCURSEL, 0, 0);
+        for (const wchar_t* scope : {L"Selected changes", L"Selected tracks", L"All tracks"})
+            SendDlgItemMessageW(dialog, IDC_METADATA_REVIEW_SCOPE, CB_ADDSTRING,
+                0, reinterpret_cast<LPARAM>(scope));
+        SendDlgItemMessageW(dialog, IDC_METADATA_REVIEW_SCOPE, CB_SETCURSEL, 0, 0);
+        SendDlgItemMessageW(dialog, IDC_METADATA_MANUAL_INPUT, EM_LIMITTEXT, 16384, 0);
 
         ListView_SetExtendedListViewStyle(state->list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
@@ -869,7 +890,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         if (header && header->idFrom == IDC_METADATA_LIST &&
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
-            if (click->iSubItem >= 0 && click->iSubItem < 4) {
+            if (click->iSubItem >= 0 && click->iSubItem < 5) {
                 if (click->iSubItem == state->metadata_sort_column)
                     state->metadata_sort_descending = !state->metadata_sort_descending;
                 else {
@@ -1013,6 +1034,8 @@ void show_batch_preview_dialog(
         state.current_choice = initial_choice;
         state.entries = capture_preview(handles, initial_choice, state.analyses);
         state.metadata_rows = djmeta::describe_metadata_diffs(state.analyses);
+        for (const auto& analysis : state.analyses)
+            state.review_decisions.emplace_back(analysis.proposals.size());
         state.track_summaries = djmeta::summarize_track_changes(
             state.entries.size(), state.metadata_rows);
         for (const auto& item : state.entries)
