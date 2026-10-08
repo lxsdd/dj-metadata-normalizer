@@ -68,8 +68,8 @@ void test_schema_v2_unicode_whitespace() {
 
 void test_structured_fields_preserved_through_shared_native_abi() {
     const char* metadata =
-        R"([{"name":"CUESHEET","values":["FILE \"X.flac\" WAVE\\n  TRACK 01 AUDIO"]},)"
-        R"({"name":"LYRICS","values":["  First\\n  Second  "]},)"
+        R"([{"name":"CUESHEET","values":["FILE \"X.flac\" WAVE\n  TRACK 01 AUDIO"]},)"
+        R"({"name":"LYRICS","values":["  First\n  Second  "]},)"
         R"({"name":"TITLE","values":["  Normal  Title  "]}])";
     const char* rules =
         R"({"schema_version":2,"ruleset_id":"cue-guard","revision":"r2","rules":[)"
@@ -82,11 +82,14 @@ void test_structured_fields_preserved_through_shared_native_abi() {
     require(status == DJMETA_STATUS_OK && output && !error,
             "shared DJ Library native ABI failed structured field case");
     const std::string json(output);
-    require(json.find("\\\"field\\\":\\\"CUESHEET\\\"") == std::string::npos &&
-            json.find("\\\"field\\\":\\\"LYRICS\\\"") == std::string::npos,
+    require(json.find("\"field\":\"CUESHEET\"") == std::string::npos &&
+            json.find("\"field\":\"LYRICS\"") == std::string::npos,
             "native ABI incorrectly proposed structural field edits");
-    require(json.find("\\\"field\\\":\\\"TITLE\\\"") != std::string::npos,
+    require(json.find("\"field\":\"TITLE\"") != std::string::npos,
             "native ABI lost valid scalar TITLE proposal");
+    require(json.find("TRACK 01 AUDIO") != std::string::npos &&
+            json.find("First") != std::string::npos,
+            "native ABI must retain original structural values in canonical preview");
     djmeta_free_string_v1(output);
 }
 
