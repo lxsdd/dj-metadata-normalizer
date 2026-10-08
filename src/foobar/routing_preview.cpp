@@ -47,7 +47,7 @@ void show_custom_route_preview(
         if (route.display_name.empty() ||
             route.destination_root.empty() ||
             route.titleformat_expression.empty())
-            throw std::invalid_argument("Routingprofil, Zielordner und Dateinamensmuster muessen gesetzt sein.");
+            throw std::invalid_argument("Route profile, destination folder and naming expression are required.");
 
         const auto loaded = load_rules_text();
         const djmeta::Ruleset ruleset = djmeta::parse_ruleset_json(loaded.json);
@@ -124,31 +124,31 @@ void show_custom_route_preview(
                 entry.handle->get_info_ref()->info());
             if (djmeta::fingerprint(latest) != entry.input_fingerprint)
                 throw std::runtime_error(
-                    "Metadaten haben sich waehrend der Planung geaendert. "
-                    "Bitte die Vorschau erneut oeffnen.");
+                    "Metadata changed while planning. "
+                    "Please reopen the preview.");
         }
 
-        std::string report = "Vorbereiten (NUR VORSCHAU) - ";
+        std::string report = "Prepare Tracks (PREVIEW ONLY) - ";
         report += route.display_name;
-        report += "\nRegelrevision: ";
+        report += "\nRuleset revision: ";
         report += ruleset.revision;
-        report += "\nAusgewaehlte Eintraege: ";
+        report += "\nSelected items: ";
         report += std::to_string(proposed.size());
-        report += "\nPhysisch nicht eindeutig: ";
+        report += "\nPhysical source ambiguous: ";
         report += std::to_string(physically_ambiguous);
-        report += "\nSimulierte SAFE-Tagvorschlaege: ";
+        report += "\nStaged SAFE tag proposals: ";
         report += std::to_string(total_safe);
-        report += "\nNicht uebernommene CONFIDENT/REVIEW-Vorschlaege: ";
+        report += "\nUnselected CONFIDENT/REVIEW proposals: ";
         report += std::to_string(total_unresolved);
-        report += "\nGleiche rohe Zielnamen (Eintraege): ";
+        report += "\nDuplicate raw targets (items): ";
         report += std::to_string(raw_collision_items);
-        report += "\n\nManuell gewaehltes Preset: ";
+        report += "\n\nSelected profile: ";
         report += route.display_name;
-        report += "\nZielordner (Referenz): ";
+        report += "\nDestination root (reference): ";
         report += route.destination_root;
         report += "\nfoobar Title Formatting: ";
         report += route.titleformat_expression;
-        report += "\n\nRoh-Auswertung der Dateinamen/-unterordner:";
+        report += "\n\nRaw filename / subfolder evaluation:";
 
         constexpr std::size_t kDetailLimit = 35;
         std::size_t count = 0;
@@ -157,11 +157,11 @@ void show_custom_route_preview(
             report += "\n\n";
             report += single_line(entry.handle->get_path());
             if (entry.requires_physical_selection) {
-                report += "\n  NICHT GEPLANT: virtueller Subsong oder mehrfach ausgewaehlte Quelldatei.";
+                report += "\n  NOT PLANNED: virtual subsong or duplicate selected physical path.";
                 continue;
             }
             if (entry.titleformat_empty) {
-                report += "\n  PRUEFEN: Dateinamensmuster ergab einen leeren Wert.";
+                report += "\n  REVIEW: Naming expression returned an empty path.";
                 continue;
             }
             report += "\n  -> ";
@@ -171,27 +171,27 @@ void show_custom_route_preview(
             const std::string full_raw_target = std::string(route.destination_root) +
                 "\\" + entry.raw_relative_path;
             if (raw_target_counts[full_raw_target] > 1)
-                report += "\n  KONFLIKTHINWEIS: gleicher Roh-Zielname mehrfach vorhanden.";
+                report += "\n  POTENTIAL CONFLICT: Duplicate raw target path.";
             if (entry.unresolved_proposals != 0)
-                report += "\n  Hinweis: fachliche Tagvorschlaege sind noch nicht freigegeben.";
+                report += "\n  Note: Semantic metadata proposals have not been approved.";
         }
         if (proposed.size() > kDetailLimit) {
             report += "\n\n... weitere ";
             report += std::to_string(proposed.size() - kDetailLimit);
-            report += " Eintraege werden hier nicht einzeln angezeigt.";
+            report += " additional items are not displayed individually.";
         }
 
-        report += "\n\nWICHTIG: Dies sind Rohwerte aus Title Formatting, ";
-        report += "KEINE geprueften File-Operations-Zielpfade.";
-        report += "\nAuch unterschiedliche Rohpfade koennen dasselbe Windows-Ziel bezeichnen.";
-        report += "\nDateinamen-Sanitizing, existierende Ziele, externe CUE-Dateien, ";
-        report += "Begleitdateien und Zeitstempelrichtlinien sind hier noch NICHT geprueft.";
-        report += "\nAndere Routen koennen im Kontextmenue manuell gewaehlt werden.";
-        report += "\nEs wurden keine Tags geschrieben und keine Dateien veraendert.";
+        report += "\n\nIMPORTANT: These are raw Title Formatting values, ";
+        report += "NOT verified File Operations destinations.";
+        report += "\nDifferent raw paths may still resolve to the same Windows destination.";
+        report += "\nFilename sanitization, existing destinations, external CUE files, ";
+        report += "sidecars and timestamp policies have NOT been checked.";
+        report += "\nSelect a different route from the context menu or Prepare Tracks dialog.";
+        report += "\nNo tags were written and no files were changed.";
         popup_message::g_show(report.c_str(), "DJ Metadata Normalizer - Routing");
     } catch (const std::exception& error) {
         std::string message =
-            "Routing-Vorschau fehlgeschlagen. Nichts wurde veraendert.\n\n";
+            "Routing preview failed. Nothing was changed.\n\n";
         message += error.what();
         popup_message::g_show(message.c_str(), "DJ Metadata Normalizer");
     }
@@ -200,7 +200,7 @@ void show_custom_route_preview(
 void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t route_index) {
     if (route_index >= legacy_move_route_count) {
         popup_message::g_show(
-            "Unbekanntes Routing-Vorschauprofil. Es wurde nichts veraendert.",
+            "Unknown routing profile. Nothing was changed.",
             "DJ Metadata Normalizer");
         return;
     }
