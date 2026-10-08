@@ -271,6 +271,16 @@ if 'apply_review_split_geometry(' not in gui_test or 'review_split_geometry(' no
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual resized HWND geometry test absent")
 if 'for (int dpi : {96, 120, 144, 192})' not in gui_test:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: DPI runtime column checks absent")
+for token in ("IDC_METADATA_VISIBLE_WHITESPACE", "preview_whitespace_text(",
+              "PreviewCommand::VisibleWhitespaceChanged", "state->show_whitespace"):
+    if token not in batch_table_dialog:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: production visible-whitespace view missing " + token)
+if 'AUTOCHECKBOX    "Show whitespace"' not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: visible-whitespace real RC checkbox missing")
+for token in ("preview_whitespace_text(", "IDC_METADATA_VISIBLE_WHITESPACE",
+              "VisibleWhitespaceChanged", "[NBSP]", "[ZWSP]"):
+    if token not in gui_test:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: visible-whitespace runtime GUI test missing " + token)
 if 'project_review_decisions(' not in batch_table_dialog or 'verify_snapshot(entry)' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual review projection lacks analysis/stale gate")
 if 'evaluate_titleformat_against_canonical(' not in batch_table_dialog or 'entry.route_expression' not in batch_table_dialog:

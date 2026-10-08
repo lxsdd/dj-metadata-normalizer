@@ -9,6 +9,8 @@
 #include <optional>
 #include <set>
 #include <vector>
+#include <string>
+#include <string_view>
 
 namespace djmeta_foobar {
 
@@ -20,7 +22,7 @@ namespace djmeta_foobar {
  * No host SDK or filesystem write API is needed here.
  */
 enum class PreviewCommand {
-    None, Accept, Reject, Reset, ManualValue, TrackFilterChanged, FocusFilterChanged
+    None, Accept, Reject, Reset, ManualValue, TrackFilterChanged, FocusFilterChanged, VisibleWhitespaceChanged
 };
 
 inline PreviewCommand native_preview_command(UINT message, WPARAM wp) {
@@ -31,6 +33,7 @@ inline PreviewCommand native_preview_command(UINT message, WPARAM wp) {
         case IDC_METADATA_REJECT: return PreviewCommand::Reject;
         case IDC_METADATA_RESET: return PreviewCommand::Reset;
         case IDC_METADATA_USE_VALUE: return PreviewCommand::ManualValue;
+        case IDC_METADATA_VISIBLE_WHITESPACE: return PreviewCommand::VisibleWhitespaceChanged;
         default: break;
         }
     }
@@ -42,6 +45,29 @@ inline PreviewCommand native_preview_command(UINT message, WPARAM wp) {
         }
     }
     return PreviewCommand::None;
+}
+
+// Display-only escaping of invisible metadata characters. Never pass the
+// decorated output to the normalization engine or foobar tag/file adapters.
+// No escaping is performed when the mode is disabled.
+inline std::wstring preview_whitespace_text(std::wstring_view original, bool show) {
+    if (!show) return std::wstring(original);
+    std::wstring display;
+    display.reserve(original.size());
+    for (wchar_t ch : original) {
+        switch (ch) {
+        case L' ': display.push_back(L'\u00b7'); break;      // middle dot
+        case L'\t': display.push_back(L'\u2192'); break;    // tab arrow
+        case L'\r': display.push_back(L'\u21b5'); break;    // carriage return
+        case L'\n': display.push_back(L'\u00b6'); break;    // paragraph mark
+        case L'\u00a0': display.append(L"[NBSP]"); break;
+        case L'\u202f': display.append(L"[NNBSP]"); break;
+        case L'\u200b': display.append(L"[ZWSP]"); break;
+        case L'\ufeff': display.append(L"[BOM]"); break;
+        default: display.push_back(ch); break;
+        }
+    }
+    return display;
 }
 
 // Resolve the actual ListView LVN_ITEMCHANGED notification. Synthetic

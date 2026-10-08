@@ -73,6 +73,7 @@ struct PreviewState {
     HWND metadata_scope = nullptr;
     HWND tabs = nullptr;
     bool show_metadata = true;
+    bool show_whitespace = false;
     djmeta::ReviewGridLayout<4> track_grid;
     djmeta::ReviewGridLayout<5> detail_grid;
     bool updating_track_selection = false;
@@ -315,12 +316,14 @@ std::wstring metadata_cell_text(PreviewState& state,
     const auto& item = state.focused_metadata_rows[index];
     switch (column) {
         case 0: return from_utf8(item.field);
-        case 1: return from_utf8(item.original);
+        case 1: return preview_whitespace_text(from_utf8(item.original),
+                                               state.show_whitespace);
         case 2: {
             const auto* decision = decision_for_row(state, item);
-            return from_utf8(decision &&
+            return preview_whitespace_text(from_utf8(decision &&
                 decision->action == djmeta::ReviewAction::ManualValue
-                ? decision->manual_value : item.proposed);
+                ? decision->manual_value : item.proposed),
+                state.show_whitespace);
         }
         case 3: return from_utf8(djmeta::to_string(item.safety));
         case 4: return review_decision_caption(state, item);
@@ -434,6 +437,8 @@ void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
     ShowWindow(state.metadata_filter, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_track_filter, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_scope, metadata ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(dialog, IDC_METADATA_VISIBLE_WHITESPACE),
+               metadata ? SW_SHOW : SW_HIDE);
     for (int id : {IDC_METADATA_ACCEPT, IDC_METADATA_REJECT,
                    IDC_METADATA_RESET, IDC_METADATA_MANUAL_INPUT,
                    IDC_METADATA_USE_VALUE})
@@ -1007,6 +1012,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                 0, reinterpret_cast<LPARAM>(scope));
         SendDlgItemMessageW(dialog, IDC_METADATA_REVIEW_SCOPE, CB_SETCURSEL, 0, 0);
         SendDlgItemMessageW(dialog, IDC_METADATA_MANUAL_INPUT, EM_LIMITTEXT, 16384, 0);
+        SendDlgItemMessageW(dialog, IDC_METADATA_VISIBLE_WHITESPACE,
+                            BM_SETCHECK, BST_UNCHECKED, 0);
 
         ListView_SetExtendedListViewStyle(state->list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
@@ -1298,6 +1305,13 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     const int id = LOWORD(wp);
     const auto native_command = native_preview_command(message, wp);
     try {
+        if (native_command == PreviewCommand::VisibleWhitespaceChanged) {
+            state->show_whitespace = SendDlgItemMessageW(
+                dialog, IDC_METADATA_VISIBLE_WHITESPACE,
+                BM_GETCHECK, 0, 0) == BST_CHECKED;
+            InvalidateRect(state->metadata_list, nullptr, FALSE);
+            return TRUE;
+        }
         if (native_command == PreviewCommand::Accept ||
             native_command == PreviewCommand::Reject ||
             native_command == PreviewCommand::Reset ||
