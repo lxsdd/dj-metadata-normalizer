@@ -58,7 +58,7 @@ jobs:
         shell: pwsh
         run: ./scripts/build-foobar.ps1 -Platform '${{ matrix.platform }}' -Configuration Release -PlatformToolset v143
       - name: Upload DLL
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@v7
         with:
           name: foo-dj-metadata-normalizer-${{ matrix.platform }}
@@ -66,8 +66,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Internal PRs may publish short-lived QA artifacts, never GitHub Releases.
+  # Fork PRs remain build-only so untrusted code cannot publish previews.
   package:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     needs: [static-audit, windows-build]
     runs-on: windows-2022
     timeout-minutes: 10
@@ -90,7 +92,7 @@ jobs:
             -X64Dll 'candidate-input/x64/foo_dj_metadata_normalizer.dll' `
             -OutputDirectory 'candidate-output' `
             -Version $version `
-            -Commit '${{ github.sha }}'
+            -Commit '${{ github.event.pull_request.head.sha || github.sha }}'
       - name: Upload combined component
         uses: actions/upload-artifact@v7
         with:
