@@ -159,6 +159,17 @@ BatchPlanReview review_batch_plan(
         if (!item.physical_id.empty() && physical_id_counts[item.physical_id] > 1)
             block(decision, "DUPLICATE_PHYSICAL_ID");
 
+        // Even a metadata-only selection is an intended operation on a
+        // physical source. It must carry enough identity to qualify an
+        // eventual tag writer; "no file action" cannot skip this preflight.
+        if (item.physical_id.empty() || item.source_path.empty() ||
+            item.source_key.empty() || item.ruleset_revision.empty())
+            block(decision, "MISSING_SOURCE_OR_RULESET_IDENTITY");
+        if (item.role == FileRole::Audio &&
+            (item.metadata_fingerprint.empty() ||
+             item.planned_metadata_fingerprint.empty()))
+            block(decision, "MISSING_METADATA_FINGERPRINT");
+
         if (!active_item(item)) {
             if (decision.status == PlanStatus::Blocked) {
                 if (stale_approval) block(decision, "STALE_BATCH_APPROVAL");
@@ -176,14 +187,6 @@ BatchPlanReview review_batch_plan(
             }
             continue;
         }
-
-        if (item.physical_id.empty() || item.source_path.empty() ||
-            item.source_key.empty() || item.ruleset_revision.empty()) {
-            block(decision, "MISSING_SOURCE_OR_RULESET_IDENTITY");
-        }
-        if (item.role == FileRole::Audio &&
-            (item.metadata_fingerprint.empty() || item.planned_metadata_fingerprint.empty()))
-            block(decision, "MISSING_METADATA_FINGERPRINT");
 
         if (item.role == FileRole::Audio) {
             if (item.cue_links == CueLinkState::NoExternalCue &&
@@ -224,8 +227,15 @@ BatchPlanReview review_batch_plan(
             if (!item.target_key.empty() && item.target_key == item.source_key) {
                 if (item.action == FileAction::Copy)
                     block(decision, "COPY_SOURCE_EQUALS_TARGET");
-                else if (!item.cue_references_will_change) {
-                    // No physical rename/move is needed.
+                else if (item.target_path != item.source_path) {
+                    // Same canonical filesystem identity but different raw
+                    // path: could be case-only rename, reparse-point alias or
+                    // separator normalization. An actual rename is required
+                    // for case-only changes; do not report it Unchanged.
+                    // A future executor needs a separately qualified strategy.
+                    block(decision, "SAME_SOURCE_TARGET_KEY_DIFFERENT_PATH");
+                } else if (!item.cue_references_will_change) {
+                    // Truly identical paths imply no physical file action.
                     decision.status = decision.reasons.empty()
                         ? PlanStatus::Unchanged : PlanStatus::Blocked;
                     if (stale_approval) block(decision, "STALE_BATCH_APPROVAL");
