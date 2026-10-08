@@ -228,6 +228,7 @@ std::string status_text(const djmeta::BatchPreviewRow& row) {
     for (const auto& issue : row.issues) {
         if (issue == "PHYSICAL_SOURCE_UNQUALIFIED") return "Physical source: REVIEW";
         if (issue == "TARGET_EXPRESSION_EMPTY") return "Empty target: REVIEW";
+        if (issue == "UNSAFE_RAW_RELATIVE_TARGET") return "Raw target: unsafe";
         if (issue == "DUPLICATE_RAW_TARGET") return "Duplicate raw target";
         if (issue == "UNAPPROVED_METADATA_PROPOSALS") return "Metadata: REVIEW";
     }
