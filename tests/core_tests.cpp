@@ -1,5 +1,6 @@
 #include "djmeta/normalizer.h"
 #include "djmeta/rule_loader.h"
+#include "djmeta/rules_snapshot.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -48,6 +49,32 @@ djmeta::Rule unicode_whitespace_rule() {
         "Map Unicode White_Space to ASCII space.",
         "builtin", ""
     };
+}
+
+void test_rules_file_snapshot_revision_and_source_identity() {
+    const djmeta::RulesTextSnapshot captured{
+        R"({"revision":"user-revision","rules":[1,2]})",
+        "C:/User/AppData/Roaming/DJMetadataNormalizer/ruleset.json"
+    };
+    require(djmeta::rules_snapshot_matches(
+        captured, captured.json, captured.source_label),
+        "same rules bytes and same source must preserve current preview");
+    const auto reject = [&](const std::string& text,
+                            const std::string& label) {
+        require(!djmeta::rules_snapshot_matches(captured, text, label),
+                "changed rule bytes or source must be stale");
+        try {
+            djmeta::require_rules_snapshot(captured, text, label);
+            require(false, "stale rule snapshot was not refused");
+        } catch (const std::invalid_argument&) {}
+    };
+    reject(R"({"revision":"user-revision","rules":[1,3]})",
+           captured.source_label); // revision unchanged, rule semantics changed
+    reject(captured.json, "embedded default ruleset"); // override vanished
+    reject(captured.json + " ", captured.source_label); // byte-exact snapshot
+    reject("", captured.source_label); // missing/invalid current source
+    djmeta::require_rules_snapshot(
+        captured, captured.json, captured.source_label);
 }
 
 void test_preview_is_immutable_and_ordered() {
@@ -428,6 +455,7 @@ void test_fingerprint_contract() {
 
 int main() {
     test_preview_is_immutable_and_ordered();
+    test_rules_file_snapshot_revision_and_source_identity();
     test_unicode_whitespace_schema_v2();
     test_structured_cuesheet_and_multiline_fields_are_never_flattened();
     test_invalid_utf8_never_produces_generic_safe_whitespace_changes();

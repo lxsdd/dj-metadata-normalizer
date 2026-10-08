@@ -19,6 +19,7 @@
 #include "djmeta/track_review.h"
 #include "djmeta/table_layout.h"
 #include "djmeta/staging.h"
+#include "djmeta/rules_snapshot.h"
 
 #include <commctrl.h>
 
@@ -63,6 +64,7 @@ struct PreviewState {
     std::vector<PreviewEntry> entries;
     djmeta::BatchPreviewTable table;
     RoutePreviewChoice current_choice;
+    djmeta::RulesTextSnapshot captured_rules;
     std::wstring cell_buffer;
     fb2k::CCoreDarkModeHooks dark;
     HWND list = nullptr;
@@ -164,6 +166,13 @@ void load_profile(HWND window, int index) {
                         from_utf8(route.foobar_titleformat).c_str());
     }
     // "Custom" retains the current editable values.
+}
+
+void verify_rules_snapshot(const djmeta::RulesTextSnapshot& captured) {
+    // One shared-rule file read per whole-batch checkpoint, never one
+    // read per track in the 54k-item host library.
+    const auto current = load_rules_text();
+    djmeta::require_rules_snapshot(captured, current.json, current.source_label);
 }
 
 void verify_snapshot(const PreviewEntry& entry) {
@@ -846,6 +855,7 @@ void apply_review_action(HWND dialog, PreviewState& state,
     }
     // Transactional whole-batch stale-input gate before publishing preview.
     for (const auto& entry : next_entries) verify_snapshot(entry);
+    verify_rules_snapshot(state.captured_rules);
 
     state.entries = std::move(next_entries);
     state.review_decisions = std::move(next_decisions);
@@ -858,6 +868,7 @@ void apply_review_action(HWND dialog, PreviewState& state,
 }
 
 void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
+    verify_rules_snapshot(state.captured_rules);
     const RoutePreviewChoice choice = read_choice(dialog);
     std::vector<std::size_t> selected;
     if (all) {
@@ -898,6 +909,7 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
     // No mixed stale snapshots: refuse the entire preview update if any
     // selected or unselected source metadata has changed.
     for (const auto& entry : candidate) verify_snapshot(entry);
+    verify_rules_snapshot(state.captured_rules);
 
     state.entries = std::move(candidate);
     state.current_choice = choice;
@@ -907,10 +919,14 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
 std::vector<PreviewEntry> capture_preview(
     const metadb_handle_list& handles,
     const RoutePreviewChoice& choice,
-    std::vector<djmeta::AnalysisResult>& analyses) {
+    std::vector<djmeta::AnalysisResult>& analyses,
+    djmeta::RulesTextSnapshot& captured_rules) {
 
     const auto loaded = load_rules_text();
     const auto rules = djmeta::parse_ruleset_json(loaded.json);
+    // Source is part of the provenance: fallback to bundled rules or
+    // migration to a roaming override invalidates existing previews.
+    const djmeta::RulesTextSnapshot starting_rules{loaded.json, loaded.source_label};
 
     std::map<std::string, std::size_t> count_per_path;
     for (t_size i = 0; i < handles.get_count(); ++i)
@@ -953,6 +969,8 @@ std::vector<PreviewEntry> capture_preview(
         analyses.push_back(std::move(result));
     }
     for (const auto& entry : entries) verify_snapshot(entry);
+    verify_rules_snapshot(starting_rules);
+    captured_rules = starting_rules;
     return entries;
 }
 
@@ -1398,7 +1416,8 @@ void show_batch_preview_dialog(
 
         PreviewState state;
         state.current_choice = initial_choice;
-        state.entries = capture_preview(handles, initial_choice, state.analyses);
+        state.entries = capture_preview(
+            handles, initial_choice, state.analyses, state.captured_rules);
         state.metadata_rows = djmeta::describe_metadata_diffs(state.analyses);
         for (const auto& analysis : state.analyses)
             state.review_decisions.emplace_back(analysis.proposals.size());
