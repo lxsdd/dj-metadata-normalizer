@@ -137,6 +137,7 @@ private:
     static INT_PTR CALLBACK dialog_proc(HWND window, UINT msg, WPARAM wp, LPARAM lp) {
         if (msg == WM_INITDIALOG) {
             auto* self = reinterpret_cast<MenuPreferencesInstance*>(lp);
+            self->m_window = window; // WM_INITDIALOG precedes CreateDialogParamW returning.
             SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
             self->m_dark.AddDialogWithControls(window);
             try {
