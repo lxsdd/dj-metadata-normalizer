@@ -24,7 +24,7 @@ std::size_t notified_track_identity = static_cast<std::size_t>(-1);
 int notified_find_row = -99;
 std::vector<std::wstring> active_track_names;
 bool rebuilding_master = false;
-INT_PTR CALLBACK test_dialog_proc(HWND, UINT message, WPARAM wp, LPARAM lp) {
+INT_PTR CALLBACK test_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM lp) {
     if (message == WM_NOTIFY) {
         const auto* hdr = reinterpret_cast<const NMHDR*>(lp);
         if (hdr && hdr->idFrom == IDC_METADATA_TRACK_LIST &&
