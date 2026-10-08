@@ -116,10 +116,17 @@ BatchPlanReview review_batch_plan(
     std::set<std::string> audio_ids;
     std::map<std::string, CueLinkState> audio_cue_states;
     std::set<std::string> all_source_keys;
+    // Distinguish declared CUE relationships from CUE operations actually
+    // included in the batch: an inactive CUE still contradicts a claimed
+    // "NoExternalCue", but cannot satisfy an active audio move dependency.
     std::map<std::string, std::size_t> cue_counts;
+    std::map<std::string, std::size_t> all_cue_counts;
 
     for (const FilePlanItem& item : items) {
         if (!item.source_key.empty()) all_source_keys.insert(item.source_key);
+        if (item.role == FileRole::ExternalCue &&
+            !item.associated_audio_id.empty())
+            ++all_cue_counts[item.associated_audio_id];
         if (item.role == FileRole::Audio && !item.physical_id.empty()) {
             audio_ids.insert(item.physical_id);
             // Preserve the host-qualified relationship state of every audio
@@ -169,6 +176,16 @@ BatchPlanReview review_batch_plan(
             (item.metadata_fingerprint.empty() ||
              item.planned_metadata_fingerprint.empty()))
             block(decision, "MISSING_METADATA_FINGERPRINT");
+        // Physical metadata changes must not skip external-CUE dependency
+        // inspection merely because no file rename/move was requested.
+        if (item.role == FileRole::Audio) {
+            if (item.cue_links == CueLinkState::Unchecked ||
+                item.cue_links == CueLinkState::Unresolved)
+                block(decision, "CUE_DEPENDENCY_UNQUALIFIED");
+            if (item.cue_links == CueLinkState::NoExternalCue &&
+                all_cue_counts[item.physical_id] != 0)
+                block(decision, "CUE_ASSOCIATION_CONTRADICTS_NO_EXTERNAL_CUE");
+        }
 
         if (!active_item(item)) {
             if (decision.status == PlanStatus::Blocked) {
@@ -189,16 +206,9 @@ BatchPlanReview review_batch_plan(
         }
 
         if (item.role == FileRole::Audio) {
-            if (item.cue_links == CueLinkState::NoExternalCue &&
-                cue_counts[item.physical_id] != 0)
-                block(decision, "CUE_ASSOCIATION_CONTRADICTS_NO_EXTERNAL_CUE");
-            if (item.cue_links == CueLinkState::Unchecked ||
-                item.cue_links == CueLinkState::Unresolved) {
-                block(decision, "CUE_DEPENDENCY_UNQUALIFIED");
-            } else if (item.cue_links == CueLinkState::Verified &&
-                       cue_counts[item.physical_id] == 0) {
+            if (item.cue_links == CueLinkState::Verified &&
+                cue_counts[item.physical_id] == 0)
                 block(decision, "VERIFIED_CUE_NOT_IN_PLAN");
-            }
         } else if (item.role == FileRole::Companion) {
             if (item.associated_audio_id.empty() ||
                 audio_ids.count(item.associated_audio_id) == 0 ||

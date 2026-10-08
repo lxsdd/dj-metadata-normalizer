@@ -401,10 +401,64 @@ void test_contradictory_audio_cue_evidence_rejected() {
             "verified tag-only audio can still anchor an associated CUE plan");
     source.cue_links = djmeta::CueLinkState::NoExternalCue;
     const auto tag_only_conflict = djmeta::review_batch_plan({source, cue});
-    require(tag_only_conflict.blocked == 1 &&
+    require(tag_only_conflict.blocked == 2 &&
+            has_reason(tag_only_conflict.decisions[0],
+                "CUE_ASSOCIATION_CONTRADICTS_NO_EXTERNAL_CUE") &&
             has_reason(tag_only_conflict.decisions[1],
                 "CUE_REFERENCE_PLAN_UNQUALIFIED"),
-            "tag-only audio cannot silently authorize contradictory CUE rewrite");
+            "tag-only audio and its contradictory CUE must both be blocked");
+}
+
+void test_inactive_cue_relationships_and_tag_only_audio_guard() {
+    auto tag_only = audio("cue-tag-only");
+    tag_only.action = djmeta::FileAction::None;
+    tag_only.target_path.clear();
+    tag_only.target_key.clear();
+
+    tag_only.cue_links = djmeta::CueLinkState::Unchecked;
+    auto result = djmeta::review_batch_plan({tag_only});
+    require(result.blocked == 1 && !result.ready_to_apply &&
+            has_reason(result.decisions[0], "CUE_DEPENDENCY_UNQUALIFIED"),
+            "metadata-only edit must not skip unchecked CUE dependency");
+
+    tag_only.cue_links = djmeta::CueLinkState::Unresolved;
+    result = djmeta::review_batch_plan({tag_only});
+    require(result.blocked == 1 &&
+            has_reason(result.decisions[0], "CUE_DEPENDENCY_UNQUALIFIED"),
+            "metadata-only edit must reject unresolved external CUE links");
+
+    tag_only.cue_links = djmeta::CueLinkState::NoExternalCue;
+    djmeta::FilePlanItem cue;
+    cue.physical_id = "inactive-cue";
+    cue.role = djmeta::FileRole::ExternalCue;
+    cue.action = djmeta::FileAction::None;
+    cue.associated_audio_id = tag_only.physical_id;
+    cue.source_path = "Z:/Music/Downloads/cue-tag-only.cue";
+    cue.source_key = "z:/music/downloads/cue-tag-only.cue";
+    cue.ruleset_revision = tag_only.ruleset_revision;
+    cue.cue_links = djmeta::CueLinkState::Verified;
+    cue.cue_source_fingerprint = "unchanged-cue-source";
+    cue.cue_postimage_fingerprint = "unchanged-cue-source";
+
+    result = djmeta::review_batch_plan({tag_only, cue});
+    require(result.blocked >= 1 && !result.ready_to_apply &&
+            has_reason(result.decisions[0],
+                "CUE_ASSOCIATION_CONTRADICTS_NO_EXTERNAL_CUE"),
+            "an inactive linked CUE still contradicts a no-external-CUE assertion");
+
+    tag_only.cue_links = djmeta::CueLinkState::Verified;
+    result = djmeta::review_batch_plan({tag_only, cue});
+    require(result.ready_to_apply && result.blocked == 0,
+            "tag-only audio with verified inactive CUE does not need a FILE rewrite");
+
+    tag_only.action = djmeta::FileAction::Move;
+    tag_only.target_path = "Z:/Music/Singles/cue-tag-only.mp3";
+    tag_only.target_key = "z:/music/singles/cue-tag-only.mp3";
+    tag_only.target_presence = djmeta::TargetPresence::Missing;
+    result = djmeta::review_batch_plan({tag_only, cue});
+    require(result.blocked == 1 && !result.ready_to_apply &&
+            has_reason(result.decisions[0], "VERIFIED_CUE_NOT_IN_PLAN"),
+            "inactive CUE listing cannot qualify a real audio move");
 }
 
 void test_cue_rewrite_only_on_external_cue_items() {
@@ -620,6 +674,7 @@ int main() {
     test_duplicate_selected_tag_only_source_cannot_escape_preflight();
     test_external_cue_dependencies();
     test_contradictory_audio_cue_evidence_rejected();
+    test_inactive_cue_relationships_and_tag_only_audio_guard();
     test_cue_rewrite_only_on_external_cue_items();
     test_metadata_only_requires_physical_identity();
     test_same_canonical_key_but_different_raw_path_is_not_noop();
