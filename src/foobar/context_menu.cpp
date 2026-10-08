@@ -3,6 +3,7 @@
 #include "guid.h"
 #include "preview.h"
 #include "prepare_dialog.h"
+#include "menu_settings.h"
 #include "routing_preview.h"
 
 namespace djmeta_foobar {
@@ -28,14 +29,9 @@ public:
     }
 
     void get_item_name(unsigned index, pfc::string_base& output) override {
-        switch (index) {
-        case 0: output = "Metadaten normalisieren (Vorschau)..."; break;
-        case 1: output = "Vorbereiten: Singles (Vorschau)..."; break;
-        case 2: output = "Vorbereiten: Alben (Vorschau)..."; break;
-        case 3: output = "Vorbereiten: Livesets (Vorschau)..."; break;
-        case 4: output = "Tracks vorbereiten (Vorschau)..."; break;
-        default: break;
-        }
+        if (index >= menu_caption_count) return;
+        const std::string caption = effective_menu_caption(index);
+        output = caption.c_str();
     }
 
     GUID get_item_guid(unsigned index) override {
