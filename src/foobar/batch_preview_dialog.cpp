@@ -706,10 +706,12 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         for (const int id : {IDC_BATCH_DESTINATION, IDC_BATCH_PATTERN})
             SendDlgItemMessageW(dialog, id, EM_LIMITTEXT, 16384, 0);
         SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_LIMITTEXT, 16384, 0);
-        for (const wchar_t* profile : {L"Singles", L"Albums", L"Live Sets"})
+        for (const auto& profile : legacy_move_routes) {
+            const auto name = from_utf8(profile.name); // user-owned preset names stay exact
             SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_ADDSTRING,
-                0, reinterpret_cast<LPARAM>(profile));
-        int initial_profile = 3;
+                0, reinterpret_cast<LPARAM>(name.c_str()));
+        }
+        int initial_profile = -1;
         for (std::size_t i = 0; i < legacy_move_route_count; ++i) {
             const auto& profile = legacy_move_routes[i];
             if (state->current_choice.display_name == profile.name &&
