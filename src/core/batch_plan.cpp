@@ -148,6 +148,9 @@ BatchPlanReview review_batch_plan(
             continue;
         }
 
+        if (item.cue_references_will_change && item.role != FileRole::ExternalCue)
+            block(decision, "CUE_REWRITE_ON_NON_CUE_ITEM");
+
         if (!active_item(item)) {
             // A stale plan approval must invalidate the *entire* batch,
             // including tag-only and otherwise unchanged file rows. Do not
