@@ -52,6 +52,11 @@ ReviewProjection project_review_decisions(
         if ((decision.action == ReviewAction::Accept ||
              (decision.action == ReviewAction::Pending &&
               proposal.safety == SafetyClass::Safe)) &&
+            proposal.proposed_value.empty() && !proposal.original_value.empty())
+            throw std::invalid_argument("review proposal would implicitly erase a tag value");
+        if ((decision.action == ReviewAction::Accept ||
+             (decision.action == ReviewAction::Pending &&
+              proposal.safety == SafetyClass::Safe)) &&
             !valid_utf8_metadata_text(proposal.proposed_value))
             throw std::invalid_argument("proposed metadata value contains malformed UTF-8");
         switch (decision.action) {
