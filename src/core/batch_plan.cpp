@@ -126,9 +126,12 @@ BatchPlanReview review_batch_plan(
             // item, even when selected only for metadata updates.
             audio_cue_states[item.physical_id] = item.cue_links;
         }
-        if (!active_item(item)) continue;
+        // Every selected row owns a physical source identity, including
+        // tag-only rows. Otherwise an active file operation could coexist
+        // with an undisclosed second selection of the same audio/subsong.
         if (!item.source_key.empty()) ++source_key_counts[item.source_key];
         if (!item.physical_id.empty()) ++physical_id_counts[item.physical_id];
+        if (!active_item(item)) continue;
         if (active_file_action(item) && !item.target_key.empty())
             ++target_key_counts[item.target_key];
         if (item.role == FileRole::ExternalCue && !item.associated_audio_id.empty())
@@ -150,8 +153,18 @@ BatchPlanReview review_batch_plan(
 
         if (item.cue_references_will_change && item.role != FileRole::ExternalCue)
             block(decision, "CUE_REWRITE_ON_NON_CUE_ITEM");
+        // Enforce uniqueness before the tag-only/no-action early exit.
+        if (!item.source_key.empty() && source_key_counts[item.source_key] > 1)
+            block(decision, "DUPLICATE_PHYSICAL_SOURCE");
+        if (!item.physical_id.empty() && physical_id_counts[item.physical_id] > 1)
+            block(decision, "DUPLICATE_PHYSICAL_ID");
 
         if (!active_item(item)) {
+            if (decision.status == PlanStatus::Blocked) {
+                if (stale_approval) block(decision, "STALE_BATCH_APPROVAL");
+                ++review.blocked;
+                continue;
+            }
             // A stale plan approval must invalidate the *entire* batch,
             // including tag-only and otherwise unchanged file rows. Do not
             // silently skip approval identity checking via this early exit.
@@ -171,11 +184,6 @@ BatchPlanReview review_batch_plan(
         if (item.role == FileRole::Audio &&
             (item.metadata_fingerprint.empty() || item.planned_metadata_fingerprint.empty()))
             block(decision, "MISSING_METADATA_FINGERPRINT");
-
-        if (!item.source_key.empty() && source_key_counts[item.source_key] > 1)
-            block(decision, "DUPLICATE_PHYSICAL_SOURCE");
-        if (!item.physical_id.empty() && physical_id_counts[item.physical_id] > 1)
-            block(decision, "DUPLICATE_PHYSICAL_ID");
 
         if (item.role == FileRole::Audio) {
             if (item.cue_links == CueLinkState::NoExternalCue &&
