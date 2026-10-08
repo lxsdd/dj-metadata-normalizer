@@ -415,3 +415,19 @@ pending a qualified asynchronous, cancelable, SDK-backed bulk preflight.
 The final host File Operations path, source-extension behavior, timestamp
 policy, collisions and CUE repair still require independent qualification
 before any executable plan is available. No file writer was introduced.
+
+### Per-transaction Title Formatting compiler reuse
+
+The native foobar routing and Prepare Tracks preview now compile each distinct
+host Title Formatting expression **once per preview or editing transaction**
+rather than recompiling the same script for each selected track. Compiled
+objects are held in a short-lived transaction-local map and released after
+the current operation. The same pinned foobar SDK compiler and `run_simple`
+implementation remain responsible for evaluation against the identical
+canonical metadata projection; no alternative titleformat interpreter or
+persistent/global cache was added.
+
+This is a structural reduction in compilation work, **not** an independently
+measured wall-clock speedup. Large-batch profiling and GUI responsiveness
+with real 1/100/15,000-file collections still require installed-foobar host
+qualification. No metadata or filesystem writer is introduced.
