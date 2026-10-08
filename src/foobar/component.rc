@@ -1,4 +1,6 @@
 #include "resource.h"
+#include <windows.h>
+#include <commctrl.h>
 
 IDR_DEFAULT_RULESET RCDATA "../../rules/default-rules.json"
 
