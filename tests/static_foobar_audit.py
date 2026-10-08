@@ -78,33 +78,54 @@ for forbidden in [
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: planner bypasses host-native read-only boundary: " + forbidden)
 
 route_menu = (foobar / "context_menu.cpp").read_text(encoding="utf-8")
-if "get_enabled_state(unsigned index)" not in route_menu:
-    raise SystemExit("STATIC FOOBAR AUDIT FAIL: menu does not expose stable host defaults")
-if "contextmenu_item::DEFAULT_OFF" not in route_menu:
-    raise SystemExit("STATIC FOOBAR AUDIT FAIL: optional routes are not host-configurable")
-if "contextmenu_item::FORCE_OFF" in route_menu:
-    raise SystemExit("STATIC FOOBAR AUDIT FAIL: user visibility control disabled")
-
+menu_settings = (foobar / "menu_settings.cpp").read_text(encoding="utf-8")
+menu_preferences = (foobar / "menu_preferences.cpp").read_text(encoding="utf-8")
+prepare_dialog = (foobar / "prepare_dialog.cpp").read_text(encoding="utf-8")
 route_preview = (foobar / "routing_preview.cpp").read_text(encoding="utf-8")
 legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf-8")
-for label, token in {
-    "single route menu": "Vorbereiten: Singles (Vorschau)",
-    "album route menu": "Vorbereiten: Alben (Vorschau)",
-    "live sets route menu": "Vorbereiten: Livesets (Vorschau)",
-    "safe-only projection": "djmeta::stage_safe_only",
-    "foobar titleformat projection": "evaluate_titleformat_against_canonical",
-    "stale metadata guard": "djmeta::fingerprint(latest)",
-    "subsong physical guard": "get_subsong_index() != 0",
-    "raw target duplicate warning": "raw_target_counts",
-    "no-write banner": "Es wurden keine Tags geschrieben",
-}.items():
-    source = route_menu if "menu" in label else route_preview
+resources = (foobar / "component.rc").read_text(encoding="utf-8")
+
+for label, source, token in [
+    ("default Singles caption", menu_settings, "Vorbereiten: Singles (Vorschau)"),
+    ("default Alben caption", menu_settings, "Vorbereiten: Alben (Vorschau)"),
+    ("default Livesets caption", menu_settings, "Vorbereiten: Livesets (Vorschau)"),
+    ("default main caption", menu_settings, "Tracks vorbereiten (Vorschau)"),
+    ("cfg-backed captions", menu_settings, "cfg_string"),
+    ("stable individual caption GUID", menu_settings, "guid_caption_primary"),
+    ("dynamic captions", route_menu, "effective_menu_caption(index)"),
+    ("new main route command", route_menu, "guids::prepare_tracks"),
+    ("main dialog dispatch", route_menu, "show_prepare_tracks_dialog(retained)"),
+    ("menu count", route_menu, "get_num_items() override { return 5; }"),
+    ("foobar menu DEFAULT_ON", route_menu, "contextmenu_item::DEFAULT_ON"),
+    ("foobar menu DEFAULT_OFF", route_menu, "contextmenu_item::DEFAULT_OFF"),
+    ("editable destination", prepare_dialog, "IDC_PREPARE_DESTINATION"),
+    ("editable expression", prepare_dialog, "IDC_PREPARE_PATTERN"),
+    ("one-off user preview", prepare_dialog, "show_custom_route_preview(handles, state.choice)"),
+    ("host modal cancel", prepare_dialog, "EndDialog(dialog, IDCANCEL)"),
+    ("host dark mode modal", prepare_dialog, "AddDialogWithControls"),
+    ("host cfg Preferences", menu_preferences, "preferences_page_v3"),
+    ("host Apply", menu_preferences, "void apply() override"),
+    ("host Reset", menu_preferences, "void reset() override"),
+    ("host staged changes", menu_preferences, "preferences_state::changed"),
+    ("host dark-mode Preferences", menu_preferences, "preferences_state::dark_mode_supported"),
+    ("native prefs dialog", resources, "IDD_MENU_PREFERENCES DIALOGEX"),
+    ("native prepare dialog", resources, "IDD_PREPARE_TRACKS DIALOGEX"),
+    ("safe-only projection", route_preview, "djmeta::stage_safe_only"),
+    ("foobar titleformat projection", route_preview, "evaluate_titleformat_against_canonical"),
+    ("stale metadata guard", route_preview, "djmeta::fingerprint(latest)"),
+    ("subsong physical guard", route_preview, "get_subsong_index() != 0"),
+    ("raw target duplicate warning", route_preview, "raw_target_counts"),
+    ("no-write banner", route_preview, "Es wurden keine Tags geschrieben"),
+]:
     if token not in source:
-        raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview missing " + label)
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing " + label)
+
+if "contextmenu_item::FORCE_OFF" in route_menu:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: host visibility disabled")
 for token in [
-    r"Z:\Music\${k}",
-    r"Z:\Music\${k}",
-    r"Z:\Music\${k}",
+    r"Z:\Music\Singles",
+    r"Z:\Music\Alben",
+    r"Z:\Music\Livesets",
     "%album artist%/%album%/%artist% - %title%",
     "%album artist%/%album%[ '('%date%')']/%tracknumber%. %artist% - %title%",
 ]:
@@ -114,14 +135,18 @@ for unsafe in [
     "update_info_async", "GENERIC_WRITE", "MoveFile(", "CopyFile(",
     "DeleteFile(", "filesystem::g_move", "filesystem::g_copy",
 ]:
-    if unsafe in route_preview:
-        raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview includes write path: " + unsafe)
-if 'src\\foobar\\routing_preview.cpp' not in project:
-    raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview omitted from Win32/x64 project")
-if 'src\\core\\routing_overrides.cpp' not in project:
-    raise SystemExit("STATIC FOOBAR AUDIT FAIL: routing overrides omitted from Win32/x64 project")
-if 'src\\core\\staging.cpp' not in project:
-    raise SystemExit("STATIC FOOBAR AUDIT FAIL: staging core omitted from Win32/x64 project")
+    if unsafe in route_preview or unsafe in prepare_dialog or unsafe in menu_preferences:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: preview includes write path: " + unsafe)
+for path in [
+    r"src\foobar\routing_preview.cpp",
+    r"src\foobar\prepare_dialog.cpp",
+    r"src\foobar\menu_settings.cpp",
+    r"src\foobar\menu_preferences.cpp",
+    r"src\core\staging.cpp",
+    r"src\core\routing_overrides.cpp",
+]:
+    if path not in project:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: source missing from Win32/x64: " + path)
 
 rules_runtime = (foobar / "rules_runtime.cpp").read_text(encoding="utf-8")
 if "CreateFileW" not in rules_runtime or "GENERIC_READ" not in rules_runtime:
