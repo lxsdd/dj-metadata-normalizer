@@ -266,7 +266,7 @@ int main() {
     active_track_names.resize(14);
     active_track_names[13] = L"Zebra - Last.flac";
     active_track_names[5] = L"Alpha - Start.mp3";
-    active_track_names[9] = L"Tiësto - Adagio.wav";
+    active_track_names[9] = L"Ti\u00ebsto - Adagio.wav";
     auto find_from_master = [&](const wchar_t* needle, int first, UINT flags) {
         NMLVFINDITEMW request{};
         request.hdr.hwndFrom = master;
