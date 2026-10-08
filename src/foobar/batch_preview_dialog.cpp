@@ -992,7 +992,7 @@ void inspect_selected_raw_targets(HWND dialog, PreviewState& state) {
         // Reading the literal route does not mimic foobar's filename
         // sanitization or automatic source-extension handling.
         const std::string raw_candidate = entry.input.destination_root +
-            "\\\\" + entry.input.raw_relative_path;
+            "\\" + entry.input.raw_relative_path;
         observations.push_back({index, probe_host_file_readonly(raw_candidate)});
     }
     // All-or-nothing UI update: revalidate the entire captured metadata and
