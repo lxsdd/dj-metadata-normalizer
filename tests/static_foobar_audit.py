@@ -247,4 +247,16 @@ if 'djmeta::filter_track_view' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: filtered master data not wired")
 if '{IDC_METADATA_TRACK_FILTER_LABEL, IDC_METADATA_TRACK_FILTER}' not in native_controls:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: native status filter alignment not wired")
+if 'project_review_decisions(' not in batch_table_dialog or 'verify_snapshot(entry)' not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual review projection lacks analysis/stale gate")
+if 'evaluate_titleformat_against_canonical(' not in batch_table_dialog or 'entry.route_expression' not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: reviewed stage does not reevaluate its own route expression")
+if 'LVNI_SELECTED' not in batch_table_dialog or 'diff.proposal_index' not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: review action target does not preserve proposal index")
+if 'IDC_METADATA_REVIEW_SCOPE' not in resources or 'IDC_METADATA_MANUAL_INPUT' not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: real review scope/manual editor missing")
+for token in ['IDC_METADATA_ACCEPT', 'IDC_METADATA_REJECT',
+              'IDC_METADATA_RESET', 'IDC_METADATA_USE_VALUE']:
+    if token not in resources or token not in batch_table_dialog or token not in gui_test:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: native review action not wired: " + token)
 print("PASS: foobar preview is analysis-only; no tag/file write path is present")
