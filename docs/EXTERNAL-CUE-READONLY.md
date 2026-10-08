@@ -75,3 +75,38 @@ development but do not replace later MSVC Win32/x64 and foobar host CI.
 
 This branch is **not** a qualified release and must not be merged into
 `main` until exact-head CI gates and host adapter dependencies pass.
+
+## Host-qualified Cue association planning
+
+The next portable core API `qualify_external_cue_association()` combines
+the strict external-CUE inventory with **host-verified physical audio
+identities**. It cannot infer identities from matching basenames.
+
+The foobar adapter must supply, for **every FILE reference**, its exact
+original filename, an unambiguous canonical physical source key, the
+planned destination-relative reference filename, and proof that the
+reference resolves to that **same physical file** after the planned
+audio/CUE operations.
+
+The planner:
+
+- rejects missing, duplicated, stale or ambiguous reference mappings;
+- requires full coverage for multi-FILE CUEs, including references to
+  audio files *outside* the selected batch;
+- maps selected audio to Cue references via host-canonical source identity,
+  rejecting duplicate selected physical IDs and source identities;
+- produces exact in-memory Cue reference postimage and SHA-256 original and
+  postimage fingerprints for the batch approval and stale-state gate;
+- preserves unselected FILE references when verified safe after the move;
+- returns only an **advisory** qualification: the host executor must re-probe
+  and revalidate all physical paths and source bytes before any write.
+
+The portable core does not compute platform-specific relative paths, probe
+the media library or filesystem, or impersonate foobar's Title Formatting
+and File Operations behavior. Read-only local Clang ASan/UBSan tests cover
+five association test suites and 20,000 randomized raw Cue inputs.
+
+**Remaining adapter work:** bind foobar physical source/path services to
+these inputs; evaluate destination-relative FILE expressions; display
+routing and filename choices; validate CUE/sidecar relations against live
+sources; qualify Win32/x64. No writer is enabled.
