@@ -34,6 +34,9 @@ struct FilePlanItem {
     std::string routing_profile;
     std::string naming_expression;
     bool manual_override = false;
+    // Companion files need a qualified preset policy or explicit manual
+    // selection. This is distinct from foobar's legacy moveOtherFiles=yes.
+    bool companion_policy_qualified = false;
 
     // Result of host filesystem preflight, not inferred by this engine.
     TargetPresence target_presence = TargetPresence::Unchecked;
