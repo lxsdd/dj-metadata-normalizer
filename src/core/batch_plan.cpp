@@ -34,7 +34,7 @@ std::string plan_fingerprint(const std::vector<FilePlanItem>& items) {
             yesno(item.manual_override),
             yesno(item.companion_policy_qualified),
             decimal(static_cast<int>(item.target_presence)),
-            item.target_guard, yesno(item.individual_overwrite_approved),
+            item.target_guard,
             decimal(static_cast<int>(item.cue_links)),
             item.cue_source_fingerprint, item.cue_postimage_fingerprint,
             yesno(item.cue_references_will_change)
@@ -167,8 +167,14 @@ BatchPlanReview review_batch_plan(
                     block(decision, "EXISTING_TARGET_NOT_GUARDED");
                 } else {
                     ++review.requires_overwrite;
+                    const bool individually_approved = approval != nullptr &&
+                        !stale_approval &&
+                        std::find(approval->individually_approved_physical_ids.begin(),
+                                  approval->individually_approved_physical_ids.end(),
+                                  item.physical_id) !=
+                            approval->individually_approved_physical_ids.end();
                     const bool overwrite_allowed =
-                        item.individual_overwrite_approved || blanket_overwrite;
+                        individually_approved || blanket_overwrite;
                     if (overwrite_allowed) {
                         decision.will_replace_existing_target = true;
                     } else if (decision.status != PlanStatus::Blocked) {
