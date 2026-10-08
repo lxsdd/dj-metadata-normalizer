@@ -48,6 +48,44 @@ void block(ItemDecision& decision, const char* reason) {
     decision.status = PlanStatus::Blocked;
 }
 
+// Unrecognized serialized/host-provided enum values must never inherit
+// execution semantics from a default branch. The planner fails closed for
+// every selected row, including a tag-only/no-file-action item.
+bool valid_action(FileAction value) {
+    switch (value) {
+    case FileAction::None:
+    case FileAction::Rename:
+    case FileAction::Move:
+    case FileAction::Copy: return true;
+    default: return false;
+    }
+}
+bool valid_role(FileRole value) {
+    switch (value) {
+    case FileRole::Audio:
+    case FileRole::ExternalCue:
+    case FileRole::Companion: return true;
+    default: return false;
+    }
+}
+bool valid_presence(TargetPresence value) {
+    switch (value) {
+    case TargetPresence::Unchecked:
+    case TargetPresence::Missing:
+    case TargetPresence::Existing: return true;
+    default: return false;
+    }
+}
+bool valid_cue_state(CueLinkState value) {
+    switch (value) {
+    case CueLinkState::Unchecked:
+    case CueLinkState::NoExternalCue:
+    case CueLinkState::Verified:
+    case CueLinkState::Unresolved: return true;
+    default: return false;
+    }
+}
+
 bool active_file_action(const FilePlanItem& item) {
     return item.action != FileAction::None;
 }
@@ -101,6 +139,14 @@ BatchPlanReview review_batch_plan(
         const FilePlanItem& item = items[index];
         ItemDecision& decision = review.decisions[index];
         decision.status = PlanStatus::Ready;
+
+        if (!valid_action(item.action) || !valid_role(item.role) ||
+            !valid_presence(item.target_presence) || !valid_cue_state(item.cue_links)) {
+            block(decision, "UNKNOWN_PLAN_ENUM_VALUE");
+            if (stale_approval) block(decision, "STALE_BATCH_APPROVAL");
+            ++review.blocked;
+            continue;
+        }
 
         if (!active_item(item)) {
             // A stale plan approval must invalidate the *entire* batch,

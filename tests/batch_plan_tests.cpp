@@ -392,6 +392,55 @@ void test_companion_files_need_explicit_or_qualified_policy() {
     require(by_policy.ready_to_apply, "qualified companion policy should be usable");
 }
 
+void test_unknown_plan_enum_values_fail_closed() {
+    const auto base = audio("unknown-enum");
+    auto case_item = base;
+    case_item.action = static_cast<djmeta::FileAction>(42);
+    auto outcome = djmeta::review_batch_plan({case_item});
+    require(outcome.blocked == 1 && !outcome.ready_to_apply &&
+            has_reason(outcome.decisions[0], "UNKNOWN_PLAN_ENUM_VALUE"),
+            "unknown action must not become an executable file plan");
+
+    case_item = base;
+    case_item.role = static_cast<djmeta::FileRole>(42);
+    outcome = djmeta::review_batch_plan({case_item});
+    require(outcome.blocked == 1 && !outcome.ready_to_apply &&
+            has_reason(outcome.decisions[0], "UNKNOWN_PLAN_ENUM_VALUE"),
+            "unknown file role must not bypass audio/CUE qualifications");
+
+    case_item = base;
+    case_item.target_presence = static_cast<djmeta::TargetPresence>(42);
+    outcome = djmeta::review_batch_plan({case_item});
+    require(outcome.blocked == 1 && !outcome.ready_to_apply &&
+            has_reason(outcome.decisions[0], "UNKNOWN_PLAN_ENUM_VALUE"),
+            "unknown target presence must not bypass filesystem inspection");
+
+    case_item = base;
+    case_item.cue_links = static_cast<djmeta::CueLinkState>(42);
+    outcome = djmeta::review_batch_plan({case_item});
+    require(outcome.blocked == 1 && !outcome.ready_to_apply &&
+            has_reason(outcome.decisions[0], "UNKNOWN_PLAN_ENUM_VALUE"),
+            "unknown cue state must never count as qualified references");
+
+    case_item = base;
+    case_item.action = djmeta::FileAction::None;
+    case_item.cue_links = static_cast<djmeta::CueLinkState>(42);
+    outcome = djmeta::review_batch_plan({case_item});
+    require(outcome.blocked == 1 && !outcome.ready_to_apply &&
+            has_reason(outcome.decisions[0], "UNKNOWN_PLAN_ENUM_VALUE"),
+            "tag-only early exit must still validate unknown enum values");
+
+    const djmeta::BatchApproval approval{outcome.plan_fingerprint, true};
+    const auto approved = djmeta::review_batch_plan({case_item}, &approval);
+    require(approved.blocked == 1 && !approved.ready_to_apply,
+            "overwrite approval must never bypass unknown enum values");
+
+    // Valid examples preserve the previous successful planning contract.
+    outcome = djmeta::review_batch_plan({base});
+    require(outcome.ready_to_apply && outcome.blocked == 0,
+            "known valid enum values must retain ready preview status");
+}
+
 void test_noop_and_missing_ids() {
     auto a = audio("A");
     a.target_key = a.source_key;
@@ -426,6 +475,7 @@ int main() {
     test_external_cue_dependencies();
     test_contradictory_audio_cue_evidence_rejected();
     test_noop_and_missing_ids();
+    test_unknown_plan_enum_values_fail_closed();
     test_companion_files_need_explicit_or_qualified_policy();
     std::cout << "PASS: deterministic read-only batch plan preflight tests\n";
     return 0;
