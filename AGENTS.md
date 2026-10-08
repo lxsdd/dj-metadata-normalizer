@@ -56,3 +56,16 @@ This repository is the canonical source of truth for DJ Metadata Normalizer.
 4. foobar preview UI;
 5. DJ Library review integration using the same engine/rules;
 6. foobar write adapter only after stale-preview and regression gates are qualified.
+
+## Mandatory zero-write contract
+
+For this and all other maintained foobar components, **do not write any
+physical file whose approved postimage is already present**. Compare full
+physical textual metadata with multivalue preservation, ReplayGain
+separately, external CUE as exact bytes, embedded CUE only through its safe
+editor, and every sidecar/file operation independently. Treat uncertain
+equality as REVIEW and stale source evidence as BLOCK. Re-check immediately
+before future mutation. Code reviews and tests must prove zero writer calls
+for no-op operations. See `docs/UNIFIED-WORKFLOW.md` and the canonical
+cross-repository no-op policy in `dev-infrastructure`. Productive writes
+remain disabled until real-host acceptance.
