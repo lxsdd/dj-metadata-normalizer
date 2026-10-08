@@ -69,6 +69,12 @@ struct ItemDecision {
     // Stable diagnostic codes for the future foobar/DJ Library UI.
     std::vector<std::string> reasons;
     bool will_replace_existing_target = false;
+    // READ-ONLY mutation intent, never permission to write. Any executor
+    // must independently compare the live physical metadata/full CUE bytes
+    // and source/target identities immediately before each I/O operation.
+    bool metadata_write_needed = false;
+    bool cue_bytes_write_needed = false;
+    bool file_operation_needed = false;
 };
 
 struct BatchPlanReview {
