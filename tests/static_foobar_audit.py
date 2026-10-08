@@ -82,6 +82,7 @@ menu_settings = (foobar / "menu_settings.cpp").read_text(encoding="utf-8")
 menu_preferences = (foobar / "menu_preferences.cpp").read_text(encoding="utf-8")
 prepare_dialog = (foobar / "prepare_dialog.cpp").read_text(encoding="utf-8")
 batch_table_dialog = (foobar / "batch_preview_dialog.cpp").read_text(encoding="utf-8")
+layout_storage = (foobar / "batch_table_settings.cpp").read_text(encoding="utf-8")
 route_preview = (foobar / "routing_preview.cpp").read_text(encoding="utf-8")
 legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf-8")
 resources = (foobar / "component.rc", "batch_preview_dialog.cpp").read_text(encoding="utf-8")
@@ -113,6 +114,18 @@ for label, source, token in [
     ("native prepare dialog", resources, "IDD_PREPARE_TRACKS DIALOGEX"),
     ("virtualized batch table resource", resources, "IDD_BATCH_PREVIEW DIALOGEX"),
     ("virtualized ListView", batch_table_dialog, "ListView_SetItemCountEx"),
+    ("header drag/drop", batch_table_dialog, "LVS_EX_HEADERDRAGDROP"),
+    ("sort on header click", batch_table_dialog, "LVN_COLUMNCLICK"),
+    ("virtual view identity mapping", batch_table_dialog, "state->view_order[view_index]"),
+    ("selected row identity", batch_table_dialog, "state.view_order[static_cast<std::size_t>(index)]"),
+    ("persistent column order", batch_table_dialog, "ListView_GetColumnOrderArray"),
+    ("persistent column widths", batch_table_dialog, "ListView_GetColumnWidth"),
+    ("column visibility", batch_table_dialog, "visible_mask"),
+    ("column header popup", batch_table_dialog, "show_column_menu"),
+    ("reset column layout", batch_table_dialog, "Reset column layout"),
+    ("layout settings read", batch_table_dialog, "load_batch_table_layout()"),
+    ("layout settings persist", batch_table_dialog, "store_batch_table_layout(state->layout)"),
+    ("foobar profile layout cfg", layout_storage, "cfg_string"),
     ("batch table model", batch_table_dialog, "djmeta::describe_batch_preview"),
     ("group route override", batch_table_dialog, "apply_to_rows(dialog, *state, true)"),
     ("selected route override", batch_table_dialog, "apply_to_rows(dialog, *state, false)"),
@@ -168,6 +181,8 @@ for path in [
     r"src\foobar\routing_preview.cpp",
     r"src\foobar\batch_preview_dialog.cpp",
     r"src\core\batch_preview.cpp",
+    r"src\core\table_layout.cpp",
+    r"src\foobar\batch_table_settings.cpp",
     r"src\foobar\prepare_dialog.cpp",
     r"src\foobar\menu_settings.cpp",
     r"src\foobar\menu_preferences.cpp",
