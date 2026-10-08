@@ -336,7 +336,9 @@ void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_FILTER_LABEL),
         metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.list, metadata ? SW_HIDE : SW_SHOW);
-    for (int id : {IDC_BATCH_PROFILE_PICKER, IDC_BATCH_PROFILE_NAME,
+    for (int id : {IDC_BATCH_ROUTE_LABEL, IDC_BATCH_NAME_LABEL,
+                   IDC_BATCH_DEST_LABEL, IDC_BATCH_PATTERN_LABEL,
+                   IDC_BATCH_PROFILE_PICKER, IDC_BATCH_PROFILE_NAME,
                    IDC_BATCH_DESTINATION, IDC_BATCH_PATTERN,
                    IDC_BATCH_APPLY_SELECTED, IDC_BATCH_APPLY_ALL}) {
         ShowWindow(GetDlgItem(dialog,id), metadata ? SW_HIDE : SW_SHOW);
@@ -521,8 +523,11 @@ void capture_resize_layout(PreviewState& state) {
             id == IDC_BATCH_DESTINATION || id == IDC_BATCH_PATTERN ||
             (id == -1 && layout.original.right >
              current.initial_client_width - 24);
-        layout.stretch_height = id == IDC_BATCH_LIST || id == IDC_METADATA_LIST;
+        layout.stretch_height = id == IDC_BATCH_LIST ||
+                                id == IDC_METADATA_LIST ||
+                                id == IDC_METADATA_TRACK_LIST;
         layout.shift_down = id != IDC_BATCH_LIST && id != IDC_METADATA_LIST &&
+            id != IDC_METADATA_TRACK_LIST &&
             id != IDC_BATCH_TABS &&
             layout.original.top >= current.initial_list_bottom;
         layout.shift_right = id == IDC_BATCH_APPLY_SELECTED ||
