@@ -58,6 +58,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\core\normalizer.cpp" />
+    <ClCompile Include="src\core\write_guard.cpp" />
     <ClCompile Include="src\core\physical_selection.cpp" />
     <ClCompile Include="src\core\staging.cpp" />
     <ClCompile Include="src\core\routing_overrides.cpp" />
@@ -83,6 +84,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\djmeta\normalizer.h" />
+    <ClInclude Include="include\djmeta\write_guard.h" />
     <ClInclude Include="include\djmeta\physical_selection.h" />
     <ClInclude Include="include\djmeta\staging.h" />
     <ClInclude Include="include\djmeta\batch_plan.h" />

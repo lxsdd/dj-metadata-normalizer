@@ -227,8 +227,8 @@ void test_stale_approval_rejects_tag_only_and_noop_rows() {
     const std::vector<djmeta::FilePlanItem> batch{a, b};
     const auto initial = djmeta::review_batch_plan(batch);
     require(initial.ready_to_apply && initial.blocked == 0 &&
-            initial.decisions[0].status == djmeta::PlanStatus::Unchanged &&
-            initial.decisions[1].status == djmeta::PlanStatus::Unchanged,
+            initial.decisions[0].status == djmeta::PlanStatus::Ready &&
+            initial.decisions[1].status == djmeta::PlanStatus::Ready,
             "tag-only file plan must stay advisory and unchanged without a stale approval");
 
     const djmeta::BatchApproval valid{initial.plan_fingerprint, false};
@@ -546,7 +546,7 @@ void test_cue_rewrite_only_on_external_cue_items() {
     audio_item.cue_links = djmeta::CueLinkState::Verified;
     const auto valid = djmeta::review_batch_plan({audio_item, cue});
     require(valid.ready_to_apply && valid.blocked == 0 &&
-            valid.decisions[0].status == djmeta::PlanStatus::Unchanged &&
+            valid.decisions[0].status == djmeta::PlanStatus::Ready &&
             valid.decisions[1].status == djmeta::PlanStatus::Ready,
             "qualified external CUE-only rewrite must remain a valid read-only plan");
 }
@@ -634,7 +634,7 @@ void test_metadata_only_requires_physical_identity() {
     item.target_key.clear();
     const auto valid = djmeta::review_batch_plan({item});
     require(valid.ready_to_apply &&
-            valid.decisions[0].status == djmeta::PlanStatus::Unchanged,
+            valid.decisions[0].status == djmeta::PlanStatus::Ready,
             "qualified metadata-only source remains an unchanged file plan");
 
     for (int missing = 0; missing < 7; ++missing) {
@@ -686,7 +686,7 @@ void test_same_canonical_key_but_different_raw_path_is_not_noop() {
     item.target_path = item.source_path;
     result = djmeta::review_batch_plan({item});
     require(result.ready_to_apply &&
-            result.decisions[0].status == djmeta::PlanStatus::Unchanged,
+            result.decisions[0].status == djmeta::PlanStatus::Ready,
             "exact same source and target path remains a no-op");
 }
 
@@ -868,6 +868,119 @@ void test_mixed_ruleset_revisions_fail_closed() {
             "matching revisions preserve mixed file/tag-only plans");
 }
 
+void test_exact_noop_write_intents() {
+    // A selected source with identical physical metadata, no CUE rewrite,
+    // and no actual destination change must never trigger any writer.
+    auto none = audio("Noop");
+    none.action = djmeta::FileAction::None;
+    none.target_path.clear();
+    none.target_key.clear();
+    none.target_presence = djmeta::TargetPresence::Unchecked;
+    none.planned_metadata_fingerprint = none.metadata_fingerprint;
+    auto reviewed = djmeta::review_batch_plan({none});
+    require(reviewed.ready_to_apply &&
+            reviewed.decisions[0].status == djmeta::PlanStatus::Unchanged &&
+            !reviewed.decisions[0].metadata_write_needed &&
+            !reviewed.decisions[0].cue_bytes_write_needed &&
+            !reviewed.decisions[0].file_operation_needed,
+            "selected but unmodified metadata must be a full no-op");
+
+    // A real tag-only change needs a tag write, never a file operation.
+    auto tag = none;
+    tag.planned_metadata_fingerprint = "approved-different-tags";
+    reviewed = djmeta::review_batch_plan({tag});
+    require(reviewed.ready_to_apply &&
+            reviewed.decisions[0].status == djmeta::PlanStatus::Ready &&
+            reviewed.decisions[0].metadata_write_needed &&
+            !reviewed.decisions[0].file_operation_needed &&
+            !reviewed.decisions[0].cue_bytes_write_needed,
+            "tag-only changes must not be misreported as unchanged");
+
+    // Metadata still matters if an otherwise redundant move targets self.
+    tag.action = djmeta::FileAction::Move;
+    tag.target_key = tag.source_key;
+    tag.target_path = tag.source_path;
+    tag.target_presence = djmeta::TargetPresence::Unchecked;
+    reviewed = djmeta::review_batch_plan({tag});
+    require(reviewed.ready_to_apply &&
+            reviewed.decisions[0].status == djmeta::PlanStatus::Ready &&
+            reviewed.decisions[0].metadata_write_needed &&
+            !reviewed.decisions[0].file_operation_needed,
+            "self-move must not turn a real tag change into a no-op");
+    tag.planned_metadata_fingerprint = tag.metadata_fingerprint;
+    reviewed = djmeta::review_batch_plan({tag});
+    require(reviewed.ready_to_apply &&
+            reviewed.decisions[0].status == djmeta::PlanStatus::Unchanged &&
+            !reviewed.decisions[0].metadata_write_needed &&
+            !reviewed.decisions[0].file_operation_needed,
+            "self-move with identical tags must perform zero writes");
+
+    // A move with identical tags needs only a file operation.
+    tag.target_path = "Z:/Music/Singles/Noop.mp3";
+    tag.target_key = "z:/music/singles/Noop.mp3";
+    tag.target_presence = djmeta::TargetPresence::Missing;
+    reviewed = djmeta::review_batch_plan({tag});
+    require(reviewed.ready_to_apply &&
+            reviewed.decisions[0].status == djmeta::PlanStatus::Ready &&
+            !reviewed.decisions[0].metadata_write_needed &&
+            reviewed.decisions[0].file_operation_needed,
+            "file move must not force unchanged metadata to be rewritten");
+
+    // Both independently requested actions should be declared when needed.
+    tag.planned_metadata_fingerprint = "new-tags-after-move";
+    reviewed = djmeta::review_batch_plan({tag});
+    require(reviewed.ready_to_apply &&
+            reviewed.decisions[0].metadata_write_needed &&
+            reviewed.decisions[0].file_operation_needed,
+            "real tag and file location edits must be represented independently");
+
+    tag.target_presence = djmeta::TargetPresence::Unchecked;
+    reviewed = djmeta::review_batch_plan({tag});
+    require(reviewed.blocked == 1 &&
+            !reviewed.decisions[0].file_operation_needed &&
+            !reviewed.decisions[0].metadata_write_needed,
+            "blocked batch must never expose any write intent");
+
+    // A CUE postimage with identical physical bytes cannot justify an edit.
+    auto audio_row = audio("CUE-Noop");
+    audio_row.action = djmeta::FileAction::None;
+    audio_row.target_path.clear();
+    audio_row.target_key.clear();
+    audio_row.planned_metadata_fingerprint = audio_row.metadata_fingerprint;
+    audio_row.cue_links = djmeta::CueLinkState::Verified;
+    djmeta::FilePlanItem cue;
+    cue.role = djmeta::FileRole::ExternalCue;
+    cue.physical_id = "cue-noop";
+    cue.source_path = "Z:/Music/Downloads/CUE-Noop.cue";
+    cue.source_key = "z:/music/downloads/CUE-Noop.cue";
+    cue.source_guard = "host-observed-cue-version";
+    cue.ruleset_revision = audio_row.ruleset_revision;
+    cue.associated_audio_id = audio_row.physical_id;
+    cue.cue_links = djmeta::CueLinkState::Verified;
+    cue.cue_references_will_change = true;
+    cue.cue_source_fingerprint = "cue-byte-unchanged";
+    cue.cue_postimage_fingerprint = cue.cue_source_fingerprint;
+    reviewed = djmeta::review_batch_plan({audio_row, cue});
+    require(reviewed.ready_to_apply &&
+            reviewed.decisions[1].status == djmeta::PlanStatus::Unchanged &&
+            !reviewed.decisions[1].cue_bytes_write_needed,
+            "byte-identical external cue cannot be rewritten");
+
+    cue.cue_postimage_fingerprint = "cue-byte-changed";
+    reviewed = djmeta::review_batch_plan({audio_row, cue});
+    require(reviewed.ready_to_apply &&
+            reviewed.decisions[1].cue_bytes_write_needed &&
+            !reviewed.decisions[1].file_operation_needed,
+            "real reference postimage change can require CUE-only writer");
+
+    cue.cue_references_will_change = false;
+    reviewed = djmeta::review_batch_plan({audio_row, cue});
+    require(reviewed.blocked == 1 &&
+            has_reason(reviewed.decisions[1], "UNDECLARED_CUE_BYTE_CHANGE") &&
+            !reviewed.decisions[1].cue_bytes_write_needed,
+            "undeclared CUE postimage mutation must fail closed");
+}
+
 void test_noop_and_missing_ids() {
     auto a = audio("A");
     a.target_key = a.source_key;
@@ -875,7 +988,7 @@ void test_noop_and_missing_ids() {
     a.target_presence = djmeta::TargetPresence::Unchecked;
     auto result = djmeta::review_batch_plan({a});
     require(result.ready_to_apply &&
-            result.decisions[0].status == djmeta::PlanStatus::Unchanged,
+            result.decisions[0].status == djmeta::PlanStatus::Ready,
             "rename/move-to-self requires no file action");
 
     a = audio("A");
@@ -912,6 +1025,7 @@ int main() {
     test_embedded_nul_in_plan_identity_fails_closed();
     test_frozen_approved_snapshot_is_detached_and_non_executing();
     test_noop_and_missing_ids();
+    test_exact_noop_write_intents();
     test_unknown_plan_enum_values_fail_closed();
     test_companion_files_need_explicit_or_qualified_policy();
     std::cout << "PASS: deterministic read-only batch plan preflight tests\n";

@@ -431,3 +431,46 @@ This is a structural reduction in compilation work, **not** an independently
 measured wall-clock speedup. Large-batch profiling and GUI responsiveness
 with real 1/100/15,000-file collections still require installed-foobar host
 qualification. No metadata or filesystem writer is introduced.
+
+### Mandatory zero-write/no-op protection (all foobar components)
+
+The mandatory cross-component rule is: **an unchanged approved postimage must
+cause zero write-capable calls**, including no unnecessary media reserialization,
+rename/copy, ReplayGain, external/embedded CUE rewrite, sidecar replacement or
+timestamp update. The canonical cross-repository policy is
+`lxsdd/dev-infrastructure/STANDARDS/FOOBAR2000-NOOP-WRITES.md`.
+
+The portable Normalizer has gained a separately tested physical-text-tag
+comparison (`include/djmeta/write_guard.h`), which compares full field/value
+sequences while ignoring only field enumeration order and ASCII tag-name
+letter case. Multi-value order and value casing remain significant. Duplicate
+case-insensitive names, missing values or embedded NUL cannot silently pass
+as an equal qualified postimage. External CUE equality is byte-for-byte,
+including encoding and line endings. Technical fields, binary artwork,
+ReplayGain and embedded-CUE metadata need their own dedicated guards.
+
+The portable batch reviewer independently describes
+`metadata_write_needed`, `cue_bytes_write_needed` and
+`file_operation_needed`. If the approved tag fingerprints are identical,
+the plan does not request tag writes even when a file move is required.
+A metadata-only edit is **Ready**, not `Unchanged`, and does not
+request filesystem movement. A redundant move-to-self with identical tags
+is `Unchanged`; a redundant move-to-self with changed tags remains tag-only.
+Identical CUE byte postimages never require rewriting. Every blocked or stale
+decision clears all mutation intents.
+
+These flags are **advisory**, and a fingerprint difference is not by itself
+permission to write: a future physical-tag writer must compare the actual
+*live full physical tag projection* immediately before opening anything for
+writing and avoid any write when the live approved postimage already exists.
+A CUE writer must similarly compare exact bytes and reverify the reference
+mapping. Changes solely to field listing order must remain no-ops. A
+`FrozenBatchPreview` is still not an executable permission, and no productive
+writer has been introduced.
+
+The first required real-foobar acceptance includes a zero-write observation
+of an unchanged MP3 and CUE, preservation of file modified/created times,
+tag-only vs move-only isolation and proving that virtual subsongs never cause
+partial physical ID3 serialization. The current preview-only component
+cannot independently demonstrate writer-call suppression because it has no
+productive writer; no such claim is made.

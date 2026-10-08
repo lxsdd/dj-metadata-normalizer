@@ -221,6 +221,24 @@ BatchPlanReview review_batch_plan(
             (item.metadata_fingerprint.empty() ||
              item.planned_metadata_fingerprint.empty()))
             block(decision, "MISSING_METADATA_FINGERPRINT");
+        // A tag writer must not run merely because a row was selected or a
+        // filename changed. Identical captured/postimage fingerprints mean
+        // there are no approved physical metadata changes to write.
+        decision.metadata_write_needed = item.role == FileRole::Audio &&
+            !item.metadata_fingerprint.empty() &&
+            !item.planned_metadata_fingerprint.empty() &&
+            item.metadata_fingerprint != item.planned_metadata_fingerprint;
+        decision.cue_bytes_write_needed = item.role == FileRole::ExternalCue &&
+            item.cue_references_will_change &&
+            !item.cue_source_fingerprint.empty() &&
+            !item.cue_postimage_fingerprint.empty() &&
+            item.cue_source_fingerprint != item.cue_postimage_fingerprint;
+        if (item.role == FileRole::ExternalCue &&
+            !item.cue_references_will_change &&
+            !item.cue_source_fingerprint.empty() &&
+            !item.cue_postimage_fingerprint.empty() &&
+            item.cue_source_fingerprint != item.cue_postimage_fingerprint)
+            block(decision, "UNDECLARED_CUE_BYTE_CHANGE");
         // Physical metadata changes must not skip external-CUE dependency
         // inspection merely because no file rename/move was requested.
         if (item.role == FileRole::Audio) {
@@ -235,6 +253,9 @@ BatchPlanReview review_batch_plan(
         if (!active_item(item)) {
             if (decision.status == PlanStatus::Blocked) {
                 if (stale_approval) block(decision, "STALE_BATCH_APPROVAL");
+                decision.metadata_write_needed = false;
+                decision.cue_bytes_write_needed = false;
+                decision.file_operation_needed = false;
                 ++review.blocked;
                 continue;
             }
@@ -243,9 +264,17 @@ BatchPlanReview review_batch_plan(
             // silently skip approval identity checking via this early exit.
             if (stale_approval) {
                 block(decision, "STALE_BATCH_APPROVAL");
+                decision.metadata_write_needed = false;
+                decision.cue_bytes_write_needed = false;
+                decision.file_operation_needed = false;
                 ++review.blocked;
             } else {
-                decision.status = PlanStatus::Unchanged;
+                decision.status = decision.metadata_write_needed
+                    ? PlanStatus::Ready : PlanStatus::Unchanged;
+            }
+            if (decision.status == PlanStatus::Blocked) {
+                decision.metadata_write_needed = false;
+                decision.cue_bytes_write_needed = false;
             }
             continue;
         }
@@ -271,6 +300,10 @@ BatchPlanReview review_batch_plan(
         }
 
         if (active_file_action(item)) {
+            decision.file_operation_needed =
+                !(item.action != FileAction::Copy &&
+                  item.source_key == item.target_key &&
+                  item.source_path == item.target_path);
             if (item.target_path.empty() || item.target_key.empty())
                 block(decision, "MISSING_TARGET_PATH_OR_IDENTITY");
             if (!item.target_key.empty() && target_key_counts[item.target_key] > 1)
@@ -290,11 +323,19 @@ BatchPlanReview review_batch_plan(
                     // A future executor needs a separately qualified strategy.
                     block(decision, "SAME_SOURCE_TARGET_KEY_DIFFERENT_PATH");
                 } else if (!item.cue_references_will_change) {
-                    // Truly identical paths imply no physical file action.
+                    // No actual file operation; tag-only changes remain
+                    // executable while byte-identical plans are true no-ops.
+                    decision.file_operation_needed = false;
                     decision.status = decision.reasons.empty()
-                        ? PlanStatus::Unchanged : PlanStatus::Blocked;
+                        ? (decision.metadata_write_needed
+                            ? PlanStatus::Ready : PlanStatus::Unchanged)
+                        : PlanStatus::Blocked;
                     if (stale_approval) block(decision, "STALE_BATCH_APPROVAL");
-                    if (decision.status == PlanStatus::Blocked) ++review.blocked;
+                    if (decision.status == PlanStatus::Blocked) {
+                        decision.metadata_write_needed = false;
+                        decision.cue_bytes_write_needed = false;
+                        ++review.blocked;
+                    }
                     continue;
                 }
             }
@@ -325,8 +366,16 @@ BatchPlanReview review_batch_plan(
         if (!decision.reasons.empty() &&
             decision.status != PlanStatus::NeedsOverwriteApproval)
             decision.status = PlanStatus::Blocked;
+        if (decision.status == PlanStatus::Ready &&
+            !decision.metadata_write_needed &&
+            !decision.cue_bytes_write_needed &&
+            !decision.file_operation_needed)
+            decision.status = PlanStatus::Unchanged;
         if (decision.status == PlanStatus::Blocked) {
             decision.will_replace_existing_target = false;
+            decision.metadata_write_needed = false;
+            decision.cue_bytes_write_needed = false;
+            decision.file_operation_needed = false;
             ++review.blocked;
         }
     }
