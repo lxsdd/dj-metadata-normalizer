@@ -73,7 +73,7 @@ HostFileObservation probe_host_file_readonly(const std::string& path) {
             return out;
         }
 
-        // Minimal read-attributes-only access; no GENERIC_WRITE, no content
+        // Minimal read-attributes-only access; no write access or content
         // streaming, no Create/Move/Replace/Delete. FILE_SHARE_DELETE avoids
         // blocking normal foobar operations while the brief probe executes.
         const HANDLE file_handle = CreateFileW(native_path.c_str(),
