@@ -207,6 +207,7 @@ for path in [
     r"src\core\batch_preview.cpp",
     r"src\core\table_layout.cpp",
     r"src\core\track_review.cpp",
+    r"src\core\review_decisions.cpp",
     r"src\foobar\batch_table_settings.cpp",
     r"src\foobar\prepare_dialog.cpp",
     r"src\foobar\menu_settings.cpp",
