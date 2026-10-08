@@ -221,7 +221,7 @@ std::wstring cell_text(PreviewState& state, std::size_t row, int column) {
     case 1: return from_utf8(entry.input.profile);
     case 2: {
         std::string display = summary.raw_destination;
-        for (char& ch : display) if (ch == '/') ch = '\\\\';
+        for (char& ch : display) if (ch == '/') ch = '\\';
         return from_utf8(display);
     }
     case 3: return from_utf8(status_text(summary));
