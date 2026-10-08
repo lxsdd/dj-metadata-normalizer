@@ -7,6 +7,7 @@ add_library(djmeta_core STATIC
     src/core/batch_plan.cpp
     src/core/external_cue.cpp
     src/core/cue_association.cpp
+    src/core/staging.cpp
     src/core/rule_loader.cpp
     src/core/analysis_json.cpp
 )
@@ -95,7 +96,19 @@ else()
     target_compile_options(djmeta_cue_association_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+add_executable(djmeta_staging_tests
+    tests/staging_tests.cpp
+)
+target_link_libraries(djmeta_staging_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_staging_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_staging_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_staging_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_staging_tests COMMAND djmeta_staging_tests)
 add_test(NAME djmeta_cue_association_tests COMMAND djmeta_cue_association_tests)
 add_test(NAME djmeta_external_cue_tests COMMAND djmeta_external_cue_tests)
 add_test(NAME djmeta_batch_plan_tests COMMAND djmeta_batch_plan_tests)
