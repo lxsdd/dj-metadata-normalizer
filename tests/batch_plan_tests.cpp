@@ -170,6 +170,60 @@ void test_new_target_after_clean_review_requires_new_consent() {
             "new destination after approval must not be silently overwritten");
 }
 
+void test_stale_approval_rejects_tag_only_and_noop_rows() {
+    auto a = audio("TagOnly-A");
+    a.action = djmeta::FileAction::None;
+    a.target_key.clear();
+    a.target_path.clear();
+    a.target_presence = djmeta::TargetPresence::Unchecked;
+
+    auto b = audio("TagOnly-B");
+    b.action = djmeta::FileAction::None;
+    b.target_key.clear();
+    b.target_path.clear();
+
+    const std::vector<djmeta::FilePlanItem> batch{a, b};
+    const auto initial = djmeta::review_batch_plan(batch);
+    require(initial.ready_to_apply && initial.blocked == 0 &&
+            initial.decisions[0].status == djmeta::PlanStatus::Unchanged &&
+            initial.decisions[1].status == djmeta::PlanStatus::Unchanged,
+            "tag-only file plan must stay advisory and unchanged without a stale approval");
+
+    const djmeta::BatchApproval valid{initial.plan_fingerprint, false};
+    const auto same = djmeta::review_batch_plan(batch, &valid);
+    require(same.ready_to_apply && same.blocked == 0,
+            "matching approval must not block a legitimate unchanged file plan");
+
+    auto mutated = batch;
+    mutated[0].planned_metadata_fingerprint = "new-in-memory-tag-review";
+    const auto stale = djmeta::review_batch_plan(mutated, &valid);
+    require(!stale.ready_to_apply && stale.blocked == 2 &&
+            has_reason(stale.decisions[0], "STALE_BATCH_APPROVAL") &&
+            has_reason(stale.decisions[1], "STALE_BATCH_APPROVAL"),
+            "changed tag postimage invalidates all batch approvals, even tag-only rows");
+
+    mutated = batch;
+    mutated[1].ruleset_revision = "new-rules-version";
+    const auto stale_rules = djmeta::review_batch_plan(mutated, &valid);
+    require(!stale_rules.ready_to_apply && stale_rules.blocked == 2 &&
+            has_reason(stale_rules.decisions[0], "STALE_BATCH_APPROVAL") &&
+            has_reason(stale_rules.decisions[1], "STALE_BATCH_APPROVAL"),
+            "changed ruleset revision invalidates unchanged file rows too");
+
+    // One active move plus a tag-only row: no silently excluded item
+    // may escape the shared plan identity guard.
+    mutated = batch;
+    mutated[1].action = djmeta::FileAction::Move;
+    mutated[1].target_path = "Z:/Music/Singles/TagOnly-B.mp3";
+    mutated[1].target_key = "z:/music/singles/tagonly-b.mp3";
+    mutated[1].target_presence = djmeta::TargetPresence::Missing;
+    const auto mixed = djmeta::review_batch_plan(mutated, &valid);
+    require(mixed.blocked == 2 && !mixed.ready_to_apply &&
+            has_reason(mixed.decisions[0], "STALE_BATCH_APPROVAL") &&
+            has_reason(mixed.decisions[1], "STALE_BATCH_APPROVAL"),
+            "mixed move/tag-only stale batch cannot partially escape approval guard");
+}
+
 void test_intra_batch_conflicts_cannot_be_overridden() {
     auto a = audio("A");
     auto b = audio("B");
@@ -367,6 +421,7 @@ int main() {
     test_missing_target_guard_and_no_inspection();
     test_new_target_after_clean_review_requires_new_consent();
     test_intra_batch_conflicts_cannot_be_overridden();
+    test_stale_approval_rejects_tag_only_and_noop_rows();
     test_duplicate_subsong_source_and_self_copy();
     test_external_cue_dependencies();
     test_contradictory_audio_cue_evidence_rejected();

@@ -103,7 +103,15 @@ BatchPlanReview review_batch_plan(
         decision.status = PlanStatus::Ready;
 
         if (!active_item(item)) {
-            decision.status = PlanStatus::Unchanged; // File plan only; tags may still change.
+            // A stale plan approval must invalidate the *entire* batch,
+            // including tag-only and otherwise unchanged file rows. Do not
+            // silently skip approval identity checking via this early exit.
+            if (stale_approval) {
+                block(decision, "STALE_BATCH_APPROVAL");
+                ++review.blocked;
+            } else {
+                decision.status = PlanStatus::Unchanged;
+            }
             continue;
         }
 
