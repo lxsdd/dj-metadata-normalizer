@@ -42,9 +42,6 @@ struct FilePlanItem {
     TargetPresence target_presence = TargetPresence::Unchecked;
     // Host-observed destination identity/stat guard, required if Existing.
     std::string target_guard;
-    // A per-item explicit overwrite selection; independent of batch approval.
-    bool individual_overwrite_approved = false;
-
     // An audio file must explicitly report no external cue, or verified cue
     // handling. Unchecked and unresolved dependencies are always blocked.
     CueLinkState cue_links = CueLinkState::Unchecked;
@@ -59,6 +56,8 @@ struct BatchApproval {
     // Bound to the exact item and filesystem-observation snapshot.
     std::string reviewed_plan_fingerprint;
     bool approve_all_observed_overwrites = false;
+    // Optional subset, bound to the SAME plan fingerprint.
+    std::vector<std::string> individually_approved_physical_ids;
 };
 
 struct ItemDecision {
