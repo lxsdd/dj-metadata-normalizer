@@ -3,6 +3,7 @@
 #include <SDK/coreDarkMode.h>
 
 #include "batch_preview_dialog.h"
+#include "host_file_probe.h"
 #include "batch_table_settings.h"
 #include "legacy_routing_profiles.h"
 #include "native_preview_controls.h"
@@ -15,6 +16,7 @@
 
 #include "djmeta/batch_preview.h"
 #include "djmeta/metadata_diff.h"
+#include "djmeta/physical_selection.h"
 #include "djmeta/review_decisions.h"
 #include "djmeta/track_review.h"
 #include "djmeta/table_layout.h"
@@ -41,6 +43,9 @@ struct PreviewEntry {
     djmeta::BatchPreviewInputRow input;
     std::string input_fingerprint;
     std::string route_expression; // per-row foobar titleformat for review recomputation
+    std::string observed_physical_key; // actual host-reported file ID, not a path guess
+    std::string observed_source_guard; // read-only file version evidence
+    std::string source_probe_detail;   // only shown as a preview diagnostic
 };
 
 struct ResizableControl {
@@ -953,20 +958,54 @@ std::vector<PreviewEntry> capture_preview(
         entry.input.destination_root = choice.destination_root;
         entry.route_expression = choice.titleformat_expression;
         entry.input.semantic_proposals_pending = staged.unresolved_proposals > 0;
-        entry.input.physical_source_qualified =
-            handle->get_subsong_index() == 0 &&
+        // Top-level subsong and raw-path uniqueness are only preliminary.
+        // A real read-only OS+foobar probe supplies physical identity. This
+        // prevents hardlinked files at different paths from being treated as
+        // independent physical operations.
+        const bool candidate = handle->get_subsong_index() == 0 &&
             count_per_path[entry.input.source_path] == 1;
-        // Unverified until the host-backed source/target and CUE preflight
-        // resolves actual file identities. Never infer safe from raw paths.
+        if (candidate) {
+            const HostFileObservation probe =
+                probe_host_file_readonly(entry.input.source_path);
+            entry.source_probe_detail = probe.detail;
+            if (probe.state == HostFileState::ExistingFile) {
+                entry.observed_physical_key = probe.host_physical_key;
+                entry.observed_source_guard = probe.source_guard;
+            }
+        } else {
+            entry.source_probe_detail =
+                "Virtual subsong or duplicate selected foobar source path.";
+        }
+        // Raw titleformat outcomes are not validated File Operations paths.
+        // A filesystem/cuesheet target gate remains permanently unqualified.
         entry.input.filesystem_target_checked = false;
         entry.input.cue_dependencies_checked = false;
-        if (entry.input.physical_source_qualified) {
-            entry.input.raw_relative_path = evaluate_titleformat_against_canonical(
-                handle->get_location(), info, entry.staged,
-                choice.titleformat_expression);
-        }
+        entry.input.physical_source_qualified = false;
         entries.push_back(std::move(entry));
         analyses.push_back(std::move(result));
+    }
+
+    std::vector<djmeta::PhysicalSelectionEvidence> evidence;
+    evidence.reserve(entries.size());
+    for (const auto& entry : entries)
+        evidence.push_back({
+            entry.handle->get_subsong_index() == 0 &&
+                count_per_path[entry.input.source_path] == 1,
+            entry.observed_physical_key, entry.observed_source_guard
+        });
+    const auto checked = djmeta::qualify_physical_selection(evidence);
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        auto& entry = entries[i];
+        if (!checked[i].qualified) {
+            entry.source_probe_detail = checked[i].reason + ": " +
+                entry.source_probe_detail;
+            continue;
+        }
+        entry.input.physical_source_qualified = true;
+        const auto current = entry.handle->get_info_ref();
+        entry.input.raw_relative_path = evaluate_titleformat_against_canonical(
+            entry.handle->get_location(), current->info(), entry.staged,
+            choice.titleformat_expression);
     }
     for (const auto& entry : entries) verify_snapshot(entry);
     verify_rules_snapshot(starting_rules);
@@ -1036,7 +1075,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
 
         ListView_SetExtendedListViewStyle(state->list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
-            LVS_EX_HEADERDRAGDROP);
+            LVS_EX_INFOTIP | LVS_EX_HEADERDRAGDROP);
         add_column(state->list, 0, L"Source file", 170);
         add_column(state->list, 1, L"Profile", 82);
         add_column(state->list, 2, L"Proposed path (unverified)", 275);
@@ -1231,6 +1270,24 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                 state->cell_buffer = metadata_cell_text(*state,
                     static_cast<std::size_t>(info->item.iItem), info->item.iSubItem);
                 info->item.pszText = state->cell_buffer.data();
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_BATCH_LIST &&
+            header->code == LVN_GETINFOTIPW) {
+            auto* tip = reinterpret_cast<NMLVGETINFOTIPW*>(lp);
+            if (tip->iItem >= 0 && tip->pszText && tip->cchTextMax > 0) {
+                const auto view_row = static_cast<std::size_t>(tip->iItem);
+                if (view_row < state->view_order.size()) {
+                    const auto source_row = state->view_order[view_row];
+                    if (source_row < state->entries.size()) {
+                        const auto& entry = state->entries[source_row];
+                        const std::wstring detail = from_utf8(
+                            entry.source_probe_detail +
+                            "\nDestination and CUE links still require final host preflight.");
+                        lstrcpynW(tip->pszText, detail.c_str(), tip->cchTextMax);
+                    }
+                }
             }
             return TRUE;
         }
