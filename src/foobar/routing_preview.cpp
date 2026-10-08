@@ -40,11 +40,14 @@ std::string single_line(std::string_view text, std::size_t max_bytes = 240) {
 
 } // namespace
 
-void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t route_index) {
+void show_custom_route_preview(
+    const metadb_handle_list& handles,
+    const RoutePreviewChoice& route) {
     try {
-        if (route_index >= legacy_move_route_count)
-            throw std::invalid_argument("Unbekanntes Routing-Vorschauprofil.");
-        const LegacyMoveRoute& route = legacy_move_routes[route_index];
+        if (route.display_name.empty() ||
+            route.destination_root.empty() ||
+            route.titleformat_expression.empty())
+            throw std::invalid_argument("Routingprofil, Zielordner und Dateinamensmuster muessen gesetzt sein.");
 
         const auto loaded = load_rules_text();
         const djmeta::Ruleset ruleset = djmeta::parse_ruleset_json(loaded.json);
@@ -89,7 +92,7 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
                 // and an in-memory file_info; no custom parser and no writes.
                 entry.raw_relative_path = evaluate_titleformat_against_canonical(
                     handle->get_location(), info, staged.document,
-                    route.foobar_titleformat);
+                    route.titleformat_expression);
                 entry.titleformat_empty = entry.raw_relative_path.empty();
             }
             proposed.push_back(std::move(entry));
@@ -126,7 +129,7 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
         }
 
         std::string report = "Vorbereiten (NUR VORSCHAU) - ";
-        report += route.name;
+        report += route.display_name;
         report += "\nRegelrevision: ";
         report += ruleset.revision;
         report += "\nAusgewaehlte Eintraege: ";
@@ -140,11 +143,11 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
         report += "\nGleiche rohe Zielnamen (Eintraege): ";
         report += std::to_string(raw_collision_items);
         report += "\n\nManuell gewaehltes Preset: ";
-        report += route.name;
+        report += route.display_name;
         report += "\nZielordner (Referenz): ";
         report += route.destination_root;
         report += "\nfoobar Title Formatting: ";
-        report += route.foobar_titleformat;
+        report += route.titleformat_expression;
         report += "\n\nRoh-Auswertung der Dateinamen/-unterordner:";
 
         constexpr std::size_t kDetailLimit = 35;
@@ -192,6 +195,19 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
         message += error.what();
         popup_message::g_show(message.c_str(), "DJ Metadata Normalizer");
     }
+}
+
+void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t route_index) {
+    if (route_index >= legacy_move_route_count) {
+        popup_message::g_show(
+            "Unbekanntes Routing-Vorschauprofil. Es wurde nichts veraendert.",
+            "DJ Metadata Normalizer");
+        return;
+    }
+    const LegacyMoveRoute& legacy = legacy_move_routes[route_index];
+    const RoutePreviewChoice choice{
+        legacy.name, legacy.destination_root, legacy.foobar_titleformat};
+    show_custom_route_preview(handles, choice);
 }
 
 } // namespace djmeta_foobar
