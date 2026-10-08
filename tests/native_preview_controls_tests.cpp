@@ -1,4 +1,5 @@
 #include "../src/foobar/native_preview_controls.h"
+#include "../src/foobar/review_grid_controls.h"
 #include "../src/foobar/legacy_routing_profiles.h"
 
 #include <commctrl.h>
@@ -6,6 +7,7 @@
 #include <cwchar>
 #include <iostream>
 #include <vector>
+#include <array>
 #include <utility>
 
 namespace {
@@ -131,6 +133,64 @@ int main() {
               (flags & LVS_OWNERDATA) != 0,
               "master/detail controls support virtualized report view");
     }
+    // Initialize columns on the real resource-backed Windows ListViews,
+    // exactly as the foobar dialog does, then exercise the shared adapter.
+    for (const auto entry : {std::pair{IDC_METADATA_TRACK_LIST, 4},
+                             std::pair{IDC_METADATA_LIST, 5}}) {
+        HWND list = GetDlgItem(dialog, entry.first);
+        for (int col = 0; col < entry.second; ++col) {
+            LVCOLUMNW c{};
+            c.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+            c.pszText = const_cast<LPWSTR>(L"Column");
+            c.cx = 90;
+            c.iSubItem = col;
+            check(ListView_InsertColumn(list, col, &c) == col,
+                  "insert physical header column into production ListView");
+        }
+    }
+    auto track_layout = djmeta::default_review_grid_layout<4>({150, 48, 48, 48});
+    track_layout.order = {3, 1, 0, 2};
+    track_layout.sort_column = 1;
+    track_layout.sort_descending = true;
+    check(djmeta::set_review_column_visible(track_layout, 2, false),
+          "track review column hidden");
+    HWND track_list = GetDlgItem(dialog, IDC_METADATA_TRACK_LIST);
+    djmeta_foobar::apply_review_grid_controls(track_list, track_layout, 96);
+    check(ListView_GetColumnWidth(track_list, 2) == 0,
+          "real virtual track grid hides review column without deletion");
+    std::array<int, 4> actual_track_order{};
+    check(ListView_GetColumnOrderArray(track_list, 4, actual_track_order.data()) &&
+          actual_track_order == track_layout.order,
+          "real track header supports independent drag order");
+    const HWND track_header = ListView_GetHeader(track_list);
+    HDITEMW selected_sort{};
+    selected_sort.mask = HDI_FORMAT;
+    check(SendMessageW(track_header, HDM_GETITEMW, 1,
+                       reinterpret_cast<LPARAM>(&selected_sort)) &&
+          (selected_sort.fmt & HDF_SORTDOWN) != 0,
+          "real Windows review header shows descending sort indicator");
+    const auto hidden_width = track_layout.widths[2];
+    ListView_SetColumnWidth(track_list, 0, 190);
+    djmeta_foobar::capture_review_grid_controls(track_list, track_layout, 96);
+    check(track_layout.widths[0] == 190 && track_layout.widths[2] == hidden_width,
+          "real resizing persists visible width but retains hidden width");
+    auto detail_layout = djmeta::default_review_grid_layout<5>({80, 105, 105, 60, 75});
+    detail_layout.order = {4, 0, 1, 3, 2};
+    HWND detail_list = GetDlgItem(dialog, IDC_METADATA_LIST);
+    djmeta_foobar::apply_review_grid_controls(detail_list, detail_layout, 96);
+    std::array<int, 5> actual_detail_order{};
+    check(ListView_GetColumnOrderArray(detail_list, 5, actual_detail_order.data()) &&
+          actual_detail_order == detail_layout.order,
+          "real five-column detail header supports persisted logical order");
+    djmeta_foobar::capture_review_grid_controls(detail_list, detail_layout, 96);
+    check(detail_layout.order == actual_detail_order,
+          "detail header order roundtrips via production adapter");
+    check(djmeta::parse_review_grid_layout(
+              djmeta::serialize_review_grid_layout(detail_layout),
+              djmeta::default_review_grid_layout<5>({80, 105, 105, 60, 75})).order ==
+          detail_layout.order,
+          "native detail layout roundtrips through the strict persisted schema");
+
     // Send genuine BN_CLICKED notifications from the production buttons
     // through the same decoder used by the real foobar dialog procedure.
     const struct {int id; djmeta_foobar::PreviewCommand expected;} buttons[] = {
