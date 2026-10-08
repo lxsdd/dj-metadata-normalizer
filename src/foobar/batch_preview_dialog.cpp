@@ -89,6 +89,7 @@ struct PreviewState {
     std::vector<djmeta::MetadataDiffRow> metadata_rows;
     std::vector<std::size_t> metadata_view_order;
     std::vector<std::string> source_labels;
+    std::vector<std::wstring> cached_track_names;
     djmeta::BatchTableLayout layout = djmeta::default_batch_table_layout();
     // Visible ListView item index -> underlying input row identity.
     std::vector<std::size_t> view_order;
@@ -1112,6 +1113,20 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             return TRUE;
         }
         if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
+            header->code == LVN_ODFINDITEMW) {
+            const auto* find = reinterpret_cast<const NMLVFINDITEMW*>(lp);
+            int row = -1;
+            if ((find->lvfi.flags & (LVFI_STRING | LVFI_PARTIAL)) != 0 &&
+                find->lvfi.psz != nullptr) {
+                row = find_native_track_prefix(
+                    state->track_view_order, state->cached_track_names,
+                    find->lvfi.psz, find->iStart,
+                    (find->lvfi.flags & LVFI_WRAP) != 0);
+            }
+            SetWindowLongPtrW(dialog, DWLP_MSGRESULT, row);
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
             if (click->iSubItem >= 0 && click->iSubItem < 4) {
@@ -1388,8 +1403,11 @@ void show_batch_preview_dialog(
         for (const auto& analysis : state.analyses)
             state.review_decisions.emplace_back(analysis.proposals.size());
         refresh_review_summaries(state);
-        for (const auto& item : state.entries)
+        for (const auto& item : state.entries) {
             state.source_labels.push_back(item.input.source_path);
+            state.cached_track_names.push_back(from_utf8(
+                readable_track_name(item.input.source_path)));
+        }
         update_table(state);
         update_metadata_table(state);
 

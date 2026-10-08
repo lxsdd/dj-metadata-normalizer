@@ -21,10 +21,21 @@ djmeta_foobar::PreviewCommand last_command = djmeta_foobar::PreviewCommand::None
 int command_notifications = 0;
 std::vector<std::size_t> active_track_order;
 std::size_t notified_track_identity = static_cast<std::size_t>(-1);
+int notified_find_row = -99;
+std::vector<std::wstring> active_track_names;
 bool rebuilding_master = false;
 INT_PTR CALLBACK test_dialog_proc(HWND, UINT message, WPARAM wp, LPARAM lp) {
     if (message == WM_NOTIFY) {
         const auto* hdr = reinterpret_cast<const NMHDR*>(lp);
+        if (hdr && hdr->idFrom == IDC_METADATA_TRACK_LIST &&
+            hdr->code == LVN_ODFINDITEMW) {
+            const auto* find = reinterpret_cast<const NMLVFINDITEMW*>(lp);
+            notified_find_row = djmeta_foobar::find_native_track_prefix(
+                active_track_order, active_track_names, find->lvfi.psz,
+                find->iStart, (find->lvfi.flags & LVFI_WRAP) != 0);
+            SetWindowLongPtrW(dialog, DWLP_MSGRESULT, notified_find_row);
+            return TRUE;
+        }
         if (hdr && hdr->idFrom == IDC_METADATA_TRACK_LIST &&
             hdr->code == LVN_ITEMCHANGED) {
             const auto* change = reinterpret_cast<const NMLISTVIEW*>(lp);
@@ -250,6 +261,41 @@ int main() {
     ListView_SetItemState(master, 2, LVIS_SELECTED, LVIS_SELECTED);
     const std::vector<std::size_t> initial_order{13, 5, 9};
     active_track_order = initial_order;
+    // Simulated incremental owner-data search notification routed through
+    // the *same* helper as production; the actual RC master is the sender.
+    active_track_names.resize(14);
+    active_track_names[13] = L"Zebra - Last.flac";
+    active_track_names[5] = L"Alpha - Start.mp3";
+    active_track_names[9] = L"Tiësto - Adagio.wav";
+    auto find_from_master = [&](const wchar_t* needle, int first, UINT flags) {
+        NMLVFINDITEMW request{};
+        request.hdr.hwndFrom = master;
+        request.hdr.idFrom = IDC_METADATA_TRACK_LIST;
+        request.hdr.code = LVN_ODFINDITEMW;
+        request.iStart = first;
+        request.lvfi.flags = flags;
+        request.lvfi.psz = needle;
+        notified_find_row = -99;
+        SendMessageW(dialog, WM_NOTIFY, IDC_METADATA_TRACK_LIST,
+                     reinterpret_cast<LPARAM>(&request));
+        return notified_find_row;
+    };
+    check(find_from_master(L"ALPHA", 0, LVFI_STRING) == 1,
+          "actual resource-backed owner-data notification searches case-insensitive source name");
+    check(find_from_master(L"tie", 0, LVFI_STRING) == -1,
+          "search must not silently remove or transliterate accented artist names");
+    check(find_from_master(L"zebra", 1, LVFI_STRING) == -1 &&
+          find_from_master(L"ZEBRA", 1, LVFI_STRING | LVFI_WRAP) == 0,
+          "incremental search respects start position and explicit wrap");
+    check(djmeta_foobar::find_native_track_prefix(
+              {9, 13}, active_track_names, L"zebra", 0, false) == 1,
+          "filtered and sorted view mapping resolves stable original source identity");
+    check(djmeta_foobar::find_native_track_prefix(
+              {}, active_track_names, L"zebra", 0, true) == -1 &&
+          djmeta_foobar::find_native_track_prefix(
+              {13}, active_track_names, L"", 0, true) == -1,
+          "empty grid and empty needle fail closed");
+
     // The ListView fires real LVN_ITEMCHANGED notifications as its selection
     // changes. The dialog callback uses the production identity resolver.
     ListView_SetItemState(master, 2, 0, LVIS_SELECTED);

@@ -70,6 +70,40 @@ inline std::wstring preview_whitespace_text(std::wstring_view original, bool sho
     return display;
 }
 
+// Owner-data ListViews do not implement type-to-find without
+// LVN_ODFINDITEM. Search cached Unicode display names through the *current*
+// filtered/sorted view while preserving the source identity separately.
+// This code never searches raw filesystem URLs or edits a metadata value.
+inline int find_native_track_prefix(
+    const std::vector<std::size_t>& view_order,
+    const std::vector<std::wstring>& track_names,
+    std::wstring_view prefix, int first_row, bool wrap) {
+    if (prefix.empty() || prefix.size() > 16384 ||
+        view_order.empty() || view_order.size() > 2147483647u)
+        return -1;
+    const int size = static_cast<int>(view_order.size());
+    int start = first_row < 0 ? 0 : first_row;
+    if (start >= size) {
+        if (!wrap) return -1;
+        start = 0;
+    }
+    const auto matches = [&](int view_index) {
+        const auto source = view_order[static_cast<std::size_t>(view_index)];
+        if (source >= track_names.size()) return false;
+        const auto& name = track_names[source];
+        if (name.size() < prefix.size()) return false;
+        return CompareStringOrdinal(name.data(), static_cast<int>(prefix.size()),
+                                    prefix.data(), static_cast<int>(prefix.size()),
+                                    TRUE) == CSTR_EQUAL;
+    };
+    for (int row = start; row < size; ++row)
+        if (matches(row)) return row;
+    if (wrap)
+        for (int row = 0; row < start; ++row)
+            if (matches(row)) return row;
+    return -1;
+}
+
 // Resolve the actual ListView LVN_ITEMCHANGED notification. Synthetic
 // view-row events and refresh-generated changes must not retarget reviews.
 inline std::optional<std::size_t> native_selected_track_change(
