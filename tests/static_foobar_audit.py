@@ -231,6 +231,16 @@ for path in [
     if path not in project:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: source missing from Win32/x64: " + path)
 
+sdk_bootstrap = (root / "scripts" / "bootstrap-sdk.ps1").read_text(encoding="utf-8")
+for token in (
+    "2026-10-01", "793738",
+    "d4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26",
+    "Get-FileHash", "SHA256", "Official SDK 7z integrity check",
+    "sdk-readme.html"
+):
+    if token not in sdk_bootstrap:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: verified official SDK pin missing: " + token)
+
 rules_runtime = (foobar / "rules_runtime.cpp").read_text(encoding="utf-8")
 if "CreateFileW" not in rules_runtime or "GENERIC_READ" not in rules_runtime:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: shared rules are not opened read-only")
