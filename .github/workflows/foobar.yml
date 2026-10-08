@@ -43,6 +43,16 @@ jobs:
       - name: Verify analysis-only foobar boundary
         run: python tests/static_foobar_audit.py
 
+  host-gate-script:
+    needs: static-audit
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test isolated host acceptance preparation and integrity verification
+        shell: pwsh
+        run: ./tests/host_acceptance_noop_tests.ps1
+
   windows-build:
     needs: static-audit
     runs-on: windows-2022
@@ -70,7 +80,7 @@ jobs:
   # Fork PRs remain build-only so untrusted code cannot publish previews.
   package:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    needs: [static-audit, windows-build]
+    needs: [static-audit, host-gate-script, windows-build]
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
