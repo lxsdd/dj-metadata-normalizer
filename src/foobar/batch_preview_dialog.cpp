@@ -531,6 +531,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         SetDlgItemTextW(dialog, IDC_BATCH_PATTERN,
                         from_utf8(state->current_choice.titleformat_expression).c_str());
         update_table(*state);
+        state->dialog = dialog;
+        capture_resize_layout(*state);
         return TRUE;
         } catch (const std::exception&) {
             MessageBoxW(dialog, L"Unable to initialize the batch preview table.",
@@ -543,6 +545,17 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     auto* state = reinterpret_cast<PreviewState*>(
         GetWindowLongPtrW(dialog, GWLP_USERDATA));
     if (!state) return FALSE;
+
+    if (message == WM_GETMINMAXINFO && state->initial_window_width > 0) {
+        auto* limits = reinterpret_cast<MINMAXINFO*>(lp);
+        limits->ptMinTrackSize.x = state->initial_window_width;
+        limits->ptMinTrackSize.y = state->initial_window_height;
+        return TRUE;
+    }
+    if (message == WM_SIZE && state->initial_client_width > 0) {
+        resize_batch_dialog(*state, LOWORD(lp), HIWORD(lp));
+        return TRUE;
+    }
 
     if (message == WM_NOTIFY) {
         const auto* header = reinterpret_cast<const NMHDR*>(lp);
