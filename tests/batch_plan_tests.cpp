@@ -730,6 +730,74 @@ void test_embedded_nul_in_plan_identity_fails_closed() {
     require(normal.ready_to_apply, "valid non-NUL source remains plannable");
 }
 
+void test_frozen_approved_snapshot_is_detached_and_non_executing() {
+    std::vector<djmeta::FilePlanItem> mutable_batch{audio("Freeze-A"), audio("Freeze-B")};
+    const auto original = djmeta::review_batch_plan(mutable_batch);
+    require(original.ready_to_apply, "valid snapshot candidate must pass preflight");
+    const djmeta::BatchApproval approval{original.plan_fingerprint, false};
+    const auto frozen = djmeta::freeze_reviewed_batch_preview(mutable_batch, approval);
+    require(frozen.items.size() == 2 &&
+            frozen.decisions.size() == 2 &&
+            frozen.plan_fingerprint == original.plan_fingerprint,
+            "frozen preview retains exact reviewed identity and decision count");
+    const auto first_source = frozen.items[0].source_path;
+    mutable_batch[0].source_path = "Z:/Music/Other/edited-after-freeze.mp3";
+    require(frozen.items[0].source_path == first_source &&
+            frozen.plan_fingerprint == original.plan_fingerprint,
+            "frozen plan must own its inputs independent of UI mutation");
+    try {
+        (void)djmeta::freeze_reviewed_batch_preview(mutable_batch, approval);
+        require(false, "stale mutable UI plan must not reuse old approval");
+    } catch (const std::invalid_argument&) {}
+
+    const djmeta::BatchApproval unconfirmed{"", true};
+    try {
+        (void)djmeta::freeze_reviewed_batch_preview({audio("Freeze-C")}, unconfirmed);
+        require(false, "explicit reviewed fingerprint required even without overwrite");
+    } catch (const std::invalid_argument&) {}
+
+    auto existing = audio("Overwrite");
+    existing.target_presence = djmeta::TargetPresence::Existing;
+    existing.target_guard = "observed-target-sha256";
+    const auto overwrite_review = djmeta::review_batch_plan({existing});
+    const djmeta::BatchApproval not_approved{overwrite_review.plan_fingerprint, false};
+    try {
+        (void)djmeta::freeze_reviewed_batch_preview({existing}, not_approved);
+        require(false, "existing destination without specific approval was frozen");
+    } catch (const std::invalid_argument&) {}
+    const djmeta::BatchApproval individually_approved{
+        overwrite_review.plan_fingerprint, false, {"Overwrite"}};
+    const auto allowed = djmeta::freeze_reviewed_batch_preview(
+        {existing}, individually_approved);
+    require(allowed.decisions[0].will_replace_existing_target &&
+            allowed.plan_fingerprint == overwrite_review.plan_fingerprint,
+            "exactly inspected destination consent must survive snapshot");
+
+    auto unresolved = audio("NoCueEvidence");
+    unresolved.cue_links = djmeta::CueLinkState::Unchecked;
+    const auto invalid = djmeta::review_batch_plan({unresolved});
+    try {
+        (void)djmeta::freeze_reviewed_batch_preview(
+            {unresolved}, djmeta::BatchApproval{invalid.plan_fingerprint, true});
+        require(false, "CUE-unqualified plan cannot freeze under blanket approval");
+    } catch (const std::invalid_argument&) {}
+
+    auto nul = audio("Nul");
+    nul.source_path.insert(4, 1, '\0');
+    const auto malformed = djmeta::review_batch_plan({nul});
+    try {
+        (void)djmeta::freeze_reviewed_batch_preview(
+            {nul}, djmeta::BatchApproval{malformed.plan_fingerprint, true});
+        require(false, "malformed source path must fail frozen batch qualification");
+    } catch (const std::invalid_argument&) {}
+
+    try {
+        (void)djmeta::freeze_reviewed_batch_preview({}, djmeta::BatchApproval{
+            djmeta::review_batch_plan({}).plan_fingerprint, true});
+        require(false, "empty batch must never produce an executable intent");
+    } catch (const std::invalid_argument&) {}
+}
+
 void test_noop_and_missing_ids() {
     auto a = audio("A");
     a.target_key = a.source_key;
@@ -770,6 +838,7 @@ int main() {
     test_metadata_only_requires_physical_identity();
     test_same_canonical_key_but_different_raw_path_is_not_noop();
     test_embedded_nul_in_plan_identity_fails_closed();
+    test_frozen_approved_snapshot_is_detached_and_non_executing();
     test_noop_and_missing_ids();
     test_unknown_plan_enum_values_fail_closed();
     test_companion_files_need_explicit_or_qualified_policy();

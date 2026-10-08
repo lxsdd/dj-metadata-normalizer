@@ -81,4 +81,22 @@ BatchPlanReview review_batch_plan(
     const std::vector<FilePlanItem>& items,
     const BatchApproval* approval = nullptr);
 
+// A detached, immutable COPY of the exactly reviewed in-memory proposal.
+// This object deliberately exposes no executor, handle, filesystem service
+// or tag-writer. It is not permission to perform I/O: a future host executor
+// MUST re-probe source/destination/CUE identities and resolve host policy
+// immediately before the first write.
+struct FrozenBatchPreview {
+    const std::string plan_fingerprint;
+    const std::vector<FilePlanItem> items;
+    const std::vector<ItemDecision> decisions;
+};
+
+// Requires explicit approval bound to this exact current plan even when
+// there are no pre-existing overwrite targets. Refuses stale, incomplete,
+// unsafe or partially reviewed plans; never writes or reads any user files.
+FrozenBatchPreview freeze_reviewed_batch_preview(
+    const std::vector<FilePlanItem>& items,
+    const BatchApproval& approval);
+
 } // namespace djmeta
