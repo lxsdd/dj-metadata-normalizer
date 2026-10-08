@@ -576,7 +576,24 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         try {
         state->dark.AddDialogWithControls(dialog);
         state->list = GetDlgItem(dialog, IDC_BATCH_LIST);
-        if (!state->list) return FALSE;
+        state->metadata_list = GetDlgItem(dialog, IDC_METADATA_LIST);
+        state->tabs = GetDlgItem(dialog, IDC_BATCH_TABS);
+        if (!state->list || !state->metadata_list || !state->tabs) return FALSE;
+        for (const wchar_t* name : {L"Metadata changes", L"File locations"}) {
+            TCITEMW tab{};
+            tab.mask = TCIF_TEXT;
+            tab.pszText = const_cast<wchar_t*>(name);
+            TabCtrl_InsertItem(state->tabs, TabCtrl_GetItemCount(state->tabs), &tab);
+        }
+        TabCtrl_SetCurSel(state->tabs, 0);
+        ListView_SetExtendedListViewStyle(state->metadata_list,
+            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP);
+        add_column(state->metadata_list, 0, L"Source file", 240);
+        add_column(state->metadata_list, 1, L"Field", 110);
+        add_column(state->metadata_list, 2, L"Original", 235);
+        add_column(state->metadata_list, 3, L"Proposed", 235);
+        add_column(state->metadata_list, 4, L"Safety", 95);
+        add_column(state->metadata_list, 5, L"Rule IDs", 200);
 
         ListView_SetExtendedListViewStyle(state->list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
@@ -598,7 +615,18 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         for (const wchar_t* profile : {L"Singles", L"Albums", L"Live Sets", L"Custom"})
             SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_ADDSTRING,
                 0, reinterpret_cast<LPARAM>(profile));
-        SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_SETCURSEL, 3, 0);
+        int initial_profile = 3;
+        for (std::size_t i = 0; i < legacy_move_route_count; ++i) {
+            const auto& profile = legacy_move_routes[i];
+            if (state->current_choice.display_name == profile.name &&
+                state->current_choice.destination_root == profile.destination_root &&
+                state->current_choice.titleformat_expression == profile.foobar_titleformat) {
+                initial_profile = static_cast<int>(i);
+                break;
+            }
+        }
+        SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_SETCURSEL,
+                            static_cast<WPARAM>(initial_profile), 0);
         SetDlgItemTextW(dialog, IDC_BATCH_PROFILE_NAME,
                         from_utf8(state->current_choice.display_name).c_str());
         SetDlgItemTextW(dialog, IDC_BATCH_DESTINATION,
@@ -606,6 +634,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         SetDlgItemTextW(dialog, IDC_BATCH_PATTERN,
                         from_utf8(state->current_choice.titleformat_expression).c_str());
         update_table(*state);
+        update_metadata_table(*state);
+        show_preview_page(dialog, *state, true);
         state->dialog = dialog;
         capture_resize_layout(*state);
         return TRUE;
