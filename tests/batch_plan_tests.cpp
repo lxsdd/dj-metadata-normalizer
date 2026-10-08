@@ -525,6 +525,67 @@ void test_unknown_plan_enum_values_fail_closed() {
             "known valid enum values must retain ready preview status");
 }
 
+void test_metadata_only_requires_physical_identity() {
+    auto item = audio("tag-only-identity");
+    item.action = djmeta::FileAction::None;
+    item.target_path.clear();
+    item.target_key.clear();
+    const auto valid = djmeta::review_batch_plan({item});
+    require(valid.ready_to_apply &&
+            valid.decisions[0].status == djmeta::PlanStatus::Unchanged,
+            "qualified metadata-only source remains an unchanged file plan");
+
+    for (int missing = 0; missing < 6; ++missing) {
+        auto invalid = item;
+        switch (missing) {
+            case 0: invalid.physical_id.clear(); break;
+            case 1: invalid.source_path.clear(); break;
+            case 2: invalid.source_key.clear(); break;
+            case 3: invalid.ruleset_revision.clear(); break;
+            case 4: invalid.metadata_fingerprint.clear(); break;
+            default: invalid.planned_metadata_fingerprint.clear(); break;
+        }
+        const auto blocked = djmeta::review_batch_plan({invalid});
+        require(blocked.blocked == 1 && !blocked.ready_to_apply &&
+                blocked.decisions[0].status == djmeta::PlanStatus::Blocked &&
+                has_reason(blocked.decisions[0], missing < 4
+                    ? "MISSING_SOURCE_OR_RULESET_IDENTITY"
+                    : "MISSING_METADATA_FINGERPRINT"),
+                "metadata-only source missing physical identity must fail closed");
+        const djmeta::BatchApproval approve{blocked.plan_fingerprint, true};
+        require(djmeta::review_batch_plan({invalid}, &approve).blocked == 1,
+                "overwrite approval cannot resurrect unqualified tag-only source");
+    }
+}
+
+void test_same_canonical_key_but_different_raw_path_is_not_noop() {
+    auto item = audio("CaseTest");
+    item.action = djmeta::FileAction::Rename;
+    item.target_key = item.source_key;
+    item.target_path = "Z:/Music/Downloads/casetest.mp3";
+    auto result = djmeta::review_batch_plan({item});
+    require(result.blocked == 1 && !result.ready_to_apply &&
+            has_reason(result.decisions[0], "SAME_SOURCE_TARGET_KEY_DIFFERENT_PATH"),
+            "case-only rename needs a qualified plan, not silent no-op");
+    const djmeta::BatchApproval approval{result.plan_fingerprint, true};
+    result = djmeta::review_batch_plan({item}, &approval);
+    require(result.blocked == 1 && !result.ready_to_apply,
+            "batch-wide approval must not bypass same-key alias safeguard");
+
+    item.action = djmeta::FileAction::Move;
+    item.target_path = "Z:\\\\Music\\\\Downloads\\\\CaseTest.mp3";
+    result = djmeta::review_batch_plan({item});
+    require(result.blocked == 1 &&
+            has_reason(result.decisions[0], "SAME_SOURCE_TARGET_KEY_DIFFERENT_PATH"),
+            "unqualified path-alias representation is not an identical raw path");
+
+    item.target_path = item.source_path;
+    result = djmeta::review_batch_plan({item});
+    require(result.ready_to_apply &&
+            result.decisions[0].status == djmeta::PlanStatus::Unchanged,
+            "exact same source and target path remains a no-op");
+}
+
 void test_noop_and_missing_ids() {
     auto a = audio("A");
     a.target_key = a.source_key;
@@ -560,6 +621,8 @@ int main() {
     test_external_cue_dependencies();
     test_contradictory_audio_cue_evidence_rejected();
     test_cue_rewrite_only_on_external_cue_items();
+    test_metadata_only_requires_physical_identity();
+    test_same_canonical_key_but_different_raw_path_is_not_noop();
     test_noop_and_missing_ids();
     test_unknown_plan_enum_values_fail_closed();
     test_companion_files_need_explicit_or_qualified_policy();
