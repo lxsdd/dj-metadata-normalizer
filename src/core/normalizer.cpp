@@ -94,6 +94,38 @@ bool ascii_iequals(std::string_view a, std::string_view b) {
     return true;
 }
 
+// An embedded CUESHEET is structured metadata, not an ordinary track tag.
+// Its FILE/INDEX records must only be edited by a qualified CUE-specific
+// adapter. Even an explicitly targeted generic normalization rule must not
+// rewrite this field as a side effect.
+bool protected_cuesheet_field(std::string_view name) {
+    return ascii_iequals(name, "CUESHEET") ||
+           ascii_iequals(name, "CUE_SHEET") ||
+           ascii_iequals(name, "__CUESHEET");
+}
+
+bool protected_lyrics_field(std::string_view name) {
+    return ascii_iequals(name, "LYRICS") ||
+           ascii_iequals(name, "UNSYNCEDLYRICS") ||
+           ascii_iequals(name, "SYNCEDLYRICS") ||
+           ascii_iequals(name, "UNSYNCED LYRICS") ||
+           ascii_iequals(name, "USLT") ||
+           ascii_iequals(name, "SYLT");
+}
+
+bool structured_line_breaks(std::string_view value) {
+    return value.find_first_of("\r\n") != std::string_view::npos ||
+           value.find("\xC2\x85") != std::string_view::npos || // U+0085 NEL
+           value.find("\xE2\x80\xA8") != std::string_view::npos || // U+2028
+           value.find("\xE2\x80\xA9") != std::string_view::npos;   // U+2029
+}
+
+bool generic_whitespace_transform(TransformKind kind) {
+    return kind == TransformKind::NormalizeUnicodeWhitespace ||
+           kind == TransformKind::TrimWhitespace ||
+           kind == TransformKind::CollapseWhitespace;
+}
+
 bool field_matches(const Rule& rule, std::string_view field_name) {
     if (rule.fields.empty()) return false;
     return std::any_of(rule.fields.begin(), rule.fields.end(), [field_name](const std::string& candidate) {
@@ -284,11 +316,20 @@ AnalysisResult Engine::analyze(
 
     for (std::size_t field_index = 0; field_index < result.canonical_preview.fields.size(); ++field_index) {
         MetadataField& field = result.canonical_preview.fields[field_index];
+        if (protected_cuesheet_field(field.name))
+            continue; // preserve exact embedded CUE bytes and record boundaries
         for (std::size_t value_index = 0; value_index < field.values.size(); ++value_index) {
             const std::string original = input.fields[field_index].values[value_index];
             for (const Rule* rule : ordered) {
                 if (!field_matches(*rule, field.name)) continue;
                 std::string& current = field.values[value_index];
+                // Whitespace transformations can destroy line or stanza
+                // boundaries and lyrics indentation. Never class this as
+                // SAFE merely because the rule matches an "*" field.
+                if (generic_whitespace_transform(rule->transform) &&
+                    (protected_lyrics_field(field.name) ||
+                     structured_line_breaks(current)))
+                    continue;
                 if (!value_matches(*rule, current)) continue;
                 const std::string proposed = transform(*rule, current);
                 if (proposed == current) continue;
