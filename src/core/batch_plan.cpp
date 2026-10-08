@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <map>
+#include <stdexcept>
 #include <set>
 #include <string>
 #include <utility>
@@ -320,6 +321,31 @@ BatchPlanReview review_batch_plan(
                        item.status == PlanStatus::Unchanged;
             });
     return review;
+}
+
+FrozenBatchPreview freeze_reviewed_batch_preview(
+    const std::vector<FilePlanItem>& items,
+    const BatchApproval& approval) {
+
+    // Recalculate from input and the exact submitted approval; a UI cannot
+    // freeze a stale reference to a previously Ready review result.
+    if (approval.reviewed_plan_fingerprint.empty())
+        throw std::invalid_argument("batch freeze requires explicit reviewed fingerprint");
+    const BatchPlanReview reviewed = review_batch_plan(items, &approval);
+    if (reviewed.plan_fingerprint != approval.reviewed_plan_fingerprint ||
+        !reviewed.ready_to_apply ||
+        reviewed.decisions.size() != items.size())
+        throw std::invalid_argument("batch preview is stale, incomplete or unapproved");
+    for (const ItemDecision& decision : reviewed.decisions) {
+        if (decision.status != PlanStatus::Ready &&
+            decision.status != PlanStatus::Unchanged)
+            throw std::invalid_argument("batch preview contains unresolved item");
+    }
+    return FrozenBatchPreview{
+        reviewed.plan_fingerprint,
+        items,
+        reviewed.decisions
+    };
 }
 
 } // namespace djmeta
