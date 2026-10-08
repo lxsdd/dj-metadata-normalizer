@@ -154,6 +154,22 @@ void test_missing_target_guard_and_no_inspection() {
             "existing target without identity guard must fail closed");
 }
 
+void test_new_target_after_clean_review_requires_new_consent() {
+    auto item = audio("A"); // target absent at preview time
+    const auto preview = djmeta::review_batch_plan({item});
+    require(preview.ready_to_apply, "absent target should initially be plannable");
+    const djmeta::BatchApproval prior{preview.plan_fingerprint, true};
+
+    // A third party creates the file between the preview and Apply.
+    item.target_presence = djmeta::TargetPresence::Existing;
+    item.target_guard = "newly-created-target";
+    const auto changed = djmeta::review_batch_plan({item}, &prior);
+    require(changed.blocked == 1 && !changed.ready_to_apply &&
+            !changed.decisions[0].will_replace_existing_target &&
+            has_reason(changed.decisions[0], "STALE_BATCH_APPROVAL"),
+            "new destination after approval must not be silently overwritten");
+}
+
 void test_intra_batch_conflicts_cannot_be_overridden() {
     auto a = audio("A");
     auto b = audio("B");
@@ -297,6 +313,7 @@ int main() {
     test_batch_overwrite_once_and_target_guard();
     test_large_batch_one_confirmation();
     test_missing_target_guard_and_no_inspection();
+    test_new_target_after_clean_review_requires_new_consent();
     test_intra_batch_conflicts_cannot_be_overridden();
     test_duplicate_subsong_source_and_self_copy();
     test_external_cue_dependencies();
