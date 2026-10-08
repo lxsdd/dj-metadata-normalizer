@@ -191,6 +191,29 @@ int main() {
           detail_layout.order,
           "native detail layout roundtrips through the strict persisted schema");
 
+    // The actual display-only control lives on the production RC dialog.
+    HWND whitespace = GetDlgItem(dialog, IDC_METADATA_VISIBLE_WHITESPACE);
+    check(whitespace != nullptr &&
+          (GetWindowLongPtrW(whitespace, GWL_STYLE) & BS_TYPEMASK) == BS_AUTOCHECKBOX,
+          "real production show-whitespace checkbox is checkable");
+    Button_SetCheck(whitespace, BST_CHECKED);
+    SendMessageW(dialog, WM_COMMAND,
+                 MAKEWPARAM(IDC_METADATA_VISIBLE_WHITESPACE, BN_CLICKED),
+                 reinterpret_cast<LPARAM>(whitespace));
+    check(last_command == djmeta_foobar::PreviewCommand::VisibleWhitespaceChanged &&
+          Button_GetCheck(whitespace) == BST_CHECKED,
+          "real checkbox sends shared production display-event command");
+
+    const std::wstring original = L"  A\tB\u00a0C\u202fD\u200bE\ufeff\r\n";
+    const std::wstring visible = djmeta_foobar::preview_whitespace_text(original, true);
+    check(visible == L"\u00b7\u00b7A\u2192B[NBSP]C[NNBSP]D[ZWSP]E[BOM]\u21b5\u00b6",
+          "display-only renderer distinguishes spaces, tabs, newlines and invisible unicode");
+    check(djmeta_foobar::preview_whitespace_text(original, false) == original &&
+          original == L"  A\tB\u00a0C\u202fD\u200bE\ufeff\r\n",
+          "disable view leaves input metadata unchanged");
+    check(djmeta_foobar::preview_whitespace_text(L"", true).empty(),
+          "empty metadata remains empty in visible-whitespace view");
+
     // Send genuine BN_CLICKED notifications from the production buttons
     // through the same decoder used by the real foobar dialog procedure.
     const struct {int id; djmeta_foobar::PreviewCommand expected;} buttons[] = {
