@@ -61,6 +61,7 @@
     <ClCompile Include="src\core\staging.cpp" />
     <ClCompile Include="src\core\routing_overrides.cpp" />
     <ClCompile Include="src\core\batch_preview.cpp" />
+    <ClCompile Include="src\core\table_layout.cpp" />
     <ClCompile Include="src\core\rule_loader.cpp" />
     <ClCompile Include="src\foobar\component.cpp" />
     <ClCompile Include="src\foobar\context_menu.cpp" />
@@ -71,6 +72,7 @@
     <ClCompile Include="src\foobar\routing_preview.cpp" />
     <ClCompile Include="src\foobar\prepare_dialog.cpp" />
     <ClCompile Include="src\foobar\batch_preview_dialog.cpp" />
+    <ClCompile Include="src\foobar\batch_table_settings.cpp" />
     <ClCompile Include="src\foobar\menu_settings.cpp" />
     <ClCompile Include="src\foobar\menu_preferences.cpp" />
   </ItemGroup>
@@ -80,6 +82,7 @@
     <ClInclude Include="include\djmeta\batch_plan.h" />
     <ClInclude Include="include\djmeta\routing_overrides.h" />
     <ClInclude Include="include\djmeta\batch_preview.h" />
+    <ClInclude Include="include\djmeta\table_layout.h" />
     <ClInclude Include="include\djmeta\rule_loader.h" />
     <ClInclude Include="src\foobar\guid.h" />
     <ClInclude Include="src\foobar\metadata_adapter.h" />
@@ -92,6 +95,7 @@
     <ClInclude Include="src\foobar\routing_preview.h" />
     <ClInclude Include="src\foobar\prepare_dialog.h" />
     <ClInclude Include="src\foobar\batch_preview_dialog.h" />
+    <ClInclude Include="src\foobar\batch_table_settings.h" />
     <ClInclude Include="src\foobar\menu_settings.h" />
   </ItemGroup>
   <ItemGroup>
