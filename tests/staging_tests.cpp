@@ -1,0 +1,108 @@
+#include "djmeta/staging.h"
+
+#include <cstdlib>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+
+namespace {
+void require(bool ok, const char* message) {
+    if (!ok) { std::cerr << "FAIL: " << message << "\n"; std::exit(1); }
+}
+
+djmeta::Proposal proposal(std::size_t field, const char* name,
+                          const char* raw, const char* desired,
+                          djmeta::SafetyClass safety) {
+    djmeta::Proposal p;
+    p.field_index = field;
+    p.field = name;
+    p.value_index = 0;
+    p.original_value = raw;
+    p.proposed_value = desired;
+    p.safety = safety;
+    return p;
+}
+
+void test_safe_only_and_semantic_exclusion() {
+    const djmeta::MetadataDocument input{{
+        {"TITLE", {"  Song  "}},
+        {"ARTIST", {"Tiësto"}},
+        {"DATE", {"1998"}},
+        {"DATE_RAW", {"1998-06-15"}}
+    }};
+    djmeta::AnalysisResult analysis;
+    analysis.input_fingerprint = djmeta::fingerprint(input);
+    analysis.proposals.push_back(
+        proposal(0, "TITLE", "  Song  ", "Song", djmeta::SafetyClass::Safe));
+    analysis.proposals.push_back(
+        proposal(1, "ARTIST", "Tiësto", "Tiesto", djmeta::SafetyClass::Review));
+
+    const auto staged = djmeta::stage_safe_only(input, analysis);
+    require(staged.safe_proposals_applied == 1 && staged.unresolved_proposals == 1,
+            "SAFE and REVIEW must be counted separately");
+    require(staged.document.fields[0].values[0] == "Song", "SAFE proposal not applied");
+    require(staged.document.fields[1].values[0] == "Tiësto",
+            "REVIEW proposal entered routing input");
+    require(staged.document.fields[2].values[0] == "1998" &&
+            staged.document.fields[3].values[0] == "1998-06-15",
+            "year and complete date must remain independent");
+    require(input.fields[0].values[0] == "  Song  ", "staging mutated raw input");
+}
+
+void test_mixed_chain_is_not_automatically_selected() {
+    const djmeta::MetadataDocument input{{{"TITLE", {"  Song (Mix)  "}}}};
+    djmeta::AnalysisResult analysis;
+    analysis.input_fingerprint = djmeta::fingerprint(input);
+    analysis.proposals.push_back(
+        proposal(0, "TITLE", "  Song (Mix)  ", "Song (Remix)", djmeta::SafetyClass::Review));
+    const auto staged = djmeta::stage_safe_only(input, analysis);
+    require(staged.document == input && staged.unresolved_proposals == 1,
+            "mixed SAFE+REVIEW chain must be wholly deferred");
+}
+
+void test_identity_guards() {
+    const djmeta::MetadataDocument input{{{"TITLE", {" A "}}}};
+    djmeta::AnalysisResult analysis;
+    analysis.input_fingerprint = djmeta::fingerprint(input);
+    analysis.proposals.push_back(
+        proposal(0, "TITLE", " A ", "A", djmeta::SafetyClass::Safe));
+
+    auto changed = input;
+    changed.fields[0].values[0] = " B ";
+    try {
+        (void)djmeta::stage_safe_only(changed, analysis);
+        require(false, "stale input accepted");
+    } catch (const std::invalid_argument&) {}
+
+    analysis.proposals[0].field_index = 5;
+    try {
+        (void)djmeta::stage_safe_only(input, analysis);
+        require(false, "invalid field index accepted");
+    } catch (const std::invalid_argument&) {}
+}
+
+void test_true_multivalue_and_duplicate_fields() {
+    const djmeta::MetadataDocument input{{
+        {"ARTIST", {" A ", " B "}},
+        {"ARTIST", {" C "}}
+    }};
+    djmeta::AnalysisResult a;
+    a.input_fingerprint = djmeta::fingerprint(input);
+    auto p = proposal(1, "ARTIST", " C ", "C", djmeta::SafetyClass::Safe);
+    a.proposals.push_back(p);
+    const auto staged = djmeta::stage_safe_only(input, a);
+    require(staged.document.fields.size() == 2, "duplicate field entry collapsed");
+    require(staged.document.fields[0].values.size() == 2 &&
+            staged.document.fields[0].values[0] == " A " &&
+            staged.document.fields[1].values[0] == "C",
+            "multivalue/duplicate field identity not retained");
+}
+}
+
+int main() {
+    test_safe_only_and_semantic_exclusion();
+    test_mixed_chain_is_not_automatically_selected();
+    test_identity_guards();
+    test_true_multivalue_and_duplicate_fields();
+    std::cout << "PASS: SAFE-only staging four suites\n";
+}
