@@ -223,6 +223,58 @@ std::wstring cell_text(PreviewState& state, std::size_t row, int column) {
     }
 }
 
+std::wstring metadata_cell_text(PreviewState& state,
+                                 std::size_t row, int column) {
+    if (row >= state.metadata_view_order.size()) return {};
+    const auto index = state.metadata_view_order[row];
+    if (index >= state.metadata_rows.size()) return {};
+    const auto& item = state.metadata_rows[index];
+    switch (column) {
+    case 0: return item.source_index < state.source_labels.size()
+        ? from_utf8(display_file_path(state.source_labels[item.source_index]))
+        : std::wstring{};
+    case 1: return from_utf8(item.field);
+    case 2: return from_utf8(item.original);
+    case 3: return from_utf8(item.proposed);
+    case 4: return from_utf8(djmeta::to_string(item.safety));
+    case 5: return from_utf8(item.rule_ids);
+    default: return {};
+    }
+}
+
+void update_metadata_table(PreviewState& state) {
+    state.metadata_view_order = djmeta::sort_metadata_diff_rows(
+        state.metadata_rows, state.source_labels,
+        state.metadata_sort_column, state.metadata_sort_descending);
+    if (state.metadata_list) {
+        ListView_SetItemCountEx(state.metadata_list,
+            static_cast<int>(state.metadata_rows.size()),
+            LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+        InvalidateRect(state.metadata_list, nullptr, FALSE);
+    }
+}
+
+void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
+    state.show_metadata = metadata;
+    ShowWindow(state.metadata_list, metadata ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.list, metadata ? SW_HIDE : SW_SHOW);
+    for (int id : {IDC_BATCH_PROFILE_PICKER, IDC_BATCH_PROFILE_NAME,
+                   IDC_BATCH_DESTINATION, IDC_BATCH_PATTERN,
+                   IDC_BATCH_APPLY_SELECTED, IDC_BATCH_APPLY_ALL}) {
+        EnableWindow(GetDlgItem(dialog, id), metadata ? FALSE : TRUE);
+    }
+    if (metadata) {
+        const std::wstring caption =
+            L"Metadata proposals: " + std::to_wstring(state.metadata_rows.size()) +
+            L". SAFE values are staged for filename preview; no tags are written.";
+        SetDlgItemTextW(dialog, IDC_BATCH_HINT, caption.c_str());
+    } else {
+        SetDlgItemTextW(dialog, IDC_BATCH_HINT,
+            L"File targets and CUE dependencies are not verified. "
+            L"Routing changes affect this preview only.");
+    }
+}
+
 void add_column(HWND list, int index, const wchar_t* name, int width) {
     LVCOLUMNW column = {};
     column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
