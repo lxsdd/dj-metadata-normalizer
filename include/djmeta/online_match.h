@@ -61,6 +61,18 @@ inline std::string comparable(std::string_view raw) {
     return out;
 }
 
+// ISRC identity is an identifier, not natural language: optional separators
+// should not turn the same 12-character code into two different recordings.
+inline std::string normalized_isrc(std::string_view raw) {
+    std::string result;
+    for (unsigned char ch : raw) {
+        if (ch == '-' || ch == ' ' || ch == '\t') continue;
+        if (ch >= 0x80 || !std::isalnum(ch)) return {};
+        result.push_back(static_cast<char>(std::toupper(ch)));
+    }
+    return result.size() == 12 ? result : std::string{};
+}
+
 inline CandidateMatch compare(const RecordingIdentity& local, const Candidate& remote) {
     CandidateMatch result;
     result.provider = remote.provider;
@@ -116,8 +128,8 @@ inline CandidateMatch compare(const RecordingIdentity& local, const Candidate& r
         result.conflicts.push_back("named_mix_unverified");
     }
 
-    const auto local_isrc = comparable(local.isrc);
-    const auto remote_isrc = comparable(remote.identity.isrc);
+    const auto local_isrc = normalized_isrc(local.isrc);
+    const auto remote_isrc = normalized_isrc(remote.identity.isrc);
     const bool same_isrc = !local_isrc.empty() && local_isrc == remote_isrc;
     if (same_isrc) {
         result.score += 18;
