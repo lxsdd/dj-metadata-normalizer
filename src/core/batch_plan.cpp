@@ -28,7 +28,8 @@ std::string plan_fingerprint(const std::vector<FilePlanItem>& items) {
             decimal(static_cast<int>(item.action)),
             decimal(static_cast<int>(item.role)),
             item.associated_audio_id,
-            item.metadata_fingerprint, item.ruleset_revision,
+            item.metadata_fingerprint, item.planned_metadata_fingerprint,
+            item.ruleset_revision,
             item.routing_profile, item.naming_expression,
             yesno(item.manual_override),
             decimal(static_cast<int>(item.target_presence)),
@@ -74,9 +75,11 @@ BatchPlanReview review_batch_plan(
     std::map<std::string, std::size_t> physical_id_counts;
     std::map<std::string, std::size_t> target_key_counts;
     std::set<std::string> audio_ids;
+    std::set<std::string> all_source_keys;
     std::map<std::string, std::size_t> cue_counts;
 
     for (const FilePlanItem& item : items) {
+        if (!item.source_key.empty()) all_source_keys.insert(item.source_key);
         if (item.role == FileRole::Audio && !item.physical_id.empty())
             audio_ids.insert(item.physical_id);
         if (!active_item(item)) continue;
@@ -102,7 +105,8 @@ BatchPlanReview review_batch_plan(
             item.source_key.empty() || item.ruleset_revision.empty()) {
             block(decision, "MISSING_SOURCE_OR_RULESET_IDENTITY");
         }
-        if (item.role == FileRole::Audio && item.metadata_fingerprint.empty())
+        if (item.role == FileRole::Audio &&
+            (item.metadata_fingerprint.empty() || item.planned_metadata_fingerprint.empty()))
             block(decision, "MISSING_METADATA_FINGERPRINT");
 
         if (!item.source_key.empty() && source_key_counts[item.source_key] > 1)
@@ -134,7 +138,7 @@ BatchPlanReview review_batch_plan(
             if (!item.target_key.empty() && target_key_counts[item.target_key] > 1)
                 block(decision, "MULTIPLE_SOURCES_SAME_TARGET");
             if (!item.target_key.empty() && item.target_key != item.source_key &&
-                source_key_counts.count(item.target_key) != 0) {
+                all_source_keys.count(item.target_key) != 0) {
                 block(decision, "TARGET_IS_BATCH_SOURCE");
             }
             if (!item.target_key.empty() && item.target_key == item.source_key) {
