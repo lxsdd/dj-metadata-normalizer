@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#include <SDK/coreDarkMode.h>
+
 #include "legacy_routing_profiles.h"
 #include "prepare_dialog.h"
 #include "resource.h"
@@ -121,7 +123,7 @@ INT_PTR CALLBACK prepare_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARA
         return TRUE;
     }
 
-    if (message == WM_DPICHANGED) {
+    if (message == 0x02E0u /* WM_DPICHANGED */) {
         const RECT* suggestion = reinterpret_cast<const RECT*>(lp);
         if (suggestion) {
             SetWindowPos(dialog, nullptr, suggestion->left, suggestion->top,
