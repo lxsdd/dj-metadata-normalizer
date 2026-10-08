@@ -12,6 +12,7 @@
 #include "titleformat_planner.h"
 
 #include "djmeta/batch_preview.h"
+#include "djmeta/metadata_diff.h"
 #include "djmeta/table_layout.h"
 #include "djmeta/staging.h"
 
@@ -59,6 +60,15 @@ struct PreviewState {
     std::wstring cell_buffer;
     fb2k::CCoreDarkModeHooks dark;
     HWND list = nullptr;
+    HWND metadata_list = nullptr;
+    HWND tabs = nullptr;
+    bool show_metadata = true;
+    int metadata_sort_column = 0;
+    bool metadata_sort_descending = false;
+    std::vector<djmeta::AnalysisResult> analyses;
+    std::vector<djmeta::MetadataDiffRow> metadata_rows;
+    std::vector<std::size_t> metadata_view_order;
+    std::vector<std::string> source_labels;
     djmeta::BatchTableLayout layout = djmeta::default_batch_table_layout();
     // Visible ListView item index -> underlying input row identity.
     std::vector<std::size_t> view_order;
@@ -191,12 +201,21 @@ std::string status_text(const djmeta::BatchPreviewRow& row) {
     return "CUE / filesystem unchecked";
 }
 
+// Strip foobar's file:// locator only for presentation, never for identity.
+std::string display_file_path(const std::string& path) {
+    if (path.compare(0, 8, "file:///") == 0)
+        return path.substr(8);
+    if (path.compare(0, 7, "file://") == 0)
+        return path.substr(7);
+    return path;
+}
+
 std::wstring cell_text(PreviewState& state, std::size_t row, int column) {
     if (row >= state.entries.size() || row >= state.table.rows.size()) return {};
     const auto& entry = state.entries[row];
     const auto& summary = state.table.rows[row];
     switch (column) {
-    case 0: return from_utf8(entry.input.source_path);
+    case 0: return from_utf8(display_file_path(entry.input.source_path));
     case 1: return from_utf8(entry.input.profile);
     case 2: return from_utf8(summary.raw_destination);
     case 3: return from_utf8(status_text(summary));
