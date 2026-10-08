@@ -1,0 +1,14 @@
+# This is a foo_fileops rename preset list file.
+# Use | character in preset names to create menu hierarchy: groupname|presetname.
+
+[preset]
+name=Cue-Files
+fileNamePattern=$if(%list_index%,$num(%list_index%,2)). %album artist% - %album%
+
+[preset]
+name=Alben
+fileNamePattern=%tracknumber%. %artist% - %title%
+
+[preset]
+name=Singles
+fileNamePattern=%artist% - %title%
