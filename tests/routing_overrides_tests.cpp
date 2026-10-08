@@ -44,7 +44,13 @@ void test_selection_is_atomic_and_recomputes() {
     cue.cue_postimage_fingerprint = "cue-old-postimage";
     cue.cue_references_will_change = true;
     cue.action = djmeta::FileAction::Move;
-    std::vector<djmeta::FilePlanItem> batch = {a,b,cue};
+    // A multi-FILE CUE may also reference B, despite A being the primary
+    // association stored in this early-stage model.
+    auto cue_for_b = cue;
+    cue_for_b.physical_id = "cue-multi-file";
+    cue_for_b.associated_audio_id = "B";
+    cue_for_b.cue_postimage_fingerprint = "shared-other-cue";
+    std::vector<djmeta::FilePlanItem> batch = {a,b,cue,cue_for_b};
     const auto raw = batch;
     const auto fingerprint = djmeta::review_batch_plan(batch).plan_fingerprint;
     const djmeta::RoutingOverride choice{
@@ -53,7 +59,7 @@ void test_selection_is_atomic_and_recomputes() {
     };
     const auto result = djmeta::apply_routing_override(batch, choice);
     require(result.accepted && result.changed_audio_count == 1, "single override should be accepted");
-    require(result.items.size() == 3 && result.items[0].routing_profile == "Alben",
+    require(result.items.size() == 4 && result.items[0].routing_profile == "Alben",
             "selected route not changed");
     require(result.items[0].manual_override, "manual source not marked");
     require(result.items[0].target_path.empty() && result.items[0].target_key.empty() &&
@@ -68,6 +74,9 @@ void test_selection_is_atomic_and_recomputes() {
             !result.items[2].cue_references_will_change &&
             result.items[2].target_path.empty(),
             "related external cue plan was not invalidated");
+    require(result.items[3].cue_postimage_fingerprint.empty() &&
+            result.items[3].target_path.empty(),
+            "shared multi-FILE CUE associated primarily with B was retained stale");
     require(batch[0].target_path == raw[0].target_path &&
             batch[2].cue_postimage_fingerprint == raw[2].cue_postimage_fingerprint,
             "original snapshot mutated");
