@@ -63,6 +63,20 @@ bool decode_utf8_at(std::string_view value, std::size_t pos, std::uint32_t& cp, 
     return true;
 }
 
+// If any byte sequence is invalid UTF-8, no generic SAFE text cleanup
+// should propose a partial edit of that value. Host encoding repair requires
+// a separate explicit review; retaining only the malformed bytes is not
+// sufficient if surrounding whitespace could still be rewritten.
+bool valid_utf8(std::string_view value) {
+    for (std::size_t pos = 0; pos < value.size();) {
+        std::uint32_t cp = 0;
+        std::size_t width = 0;
+        if (!decode_utf8_at(value, pos, cp, width)) return false;
+        pos += width;
+    }
+    return true;
+}
+
 std::string normalize_unicode_whitespace(std::string_view value) {
     std::string out;
     out.reserve(value.size());
@@ -320,9 +334,15 @@ AnalysisResult Engine::analyze(
             continue; // preserve exact embedded CUE bytes and record boundaries
         for (std::size_t value_index = 0; value_index < field.values.size(); ++value_index) {
             const std::string original = input.fields[field_index].values[value_index];
+            // Re-encode or repair malformed bytes only in an explicit
+            // semantic REVIEW operation, never through wildcard SAFE cleanup.
+            const bool input_valid_utf8 = valid_utf8(original);
             for (const Rule* rule : ordered) {
                 if (!field_matches(*rule, field.name)) continue;
                 std::string& current = field.values[value_index];
+                if (!input_valid_utf8 &&
+                    generic_whitespace_transform(rule->transform))
+                    continue;
                 // Whitespace transformations can destroy line or stanza
                 // boundaries and lyrics indentation. Never class this as
                 // SAFE merely because the rule matches an "*" field.

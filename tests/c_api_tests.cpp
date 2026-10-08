@@ -93,6 +93,29 @@ void test_structured_fields_preserved_through_shared_native_abi() {
     djmeta_free_string_v1(output);
 }
 
+void test_malformed_utf8_value_has_no_partial_safe_proposals() {
+    // The shared native C ABI can receive malformed bytes from an old or
+    // misencoded Bridge snapshot. Its JSON parser currently preserves them;
+    // the normalization engine must never label a partial edit SAFE.
+    const char* rules =
+        R"({"schema_version":2,"ruleset_id":"utf8-guard","revision":"r2","rules":[)"
+        R"({"id":"safe.trim","enabled":true,"priority":10,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"trim_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"trim"}},)"
+        R"({"id":"safe.collapse","enabled":true,"priority":20,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"collapse_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"collapse"}}]})";
+    const std::string malformed = std::string(
+        R"([{"name":"TITLE","values":["  A   )") + std::string("\xC2", 1) +
+        R"(   B  "]},{"name":"ARTIST","values":["  Valid   Artist  "]}])";
+    char* output = nullptr;
+    char* error = nullptr;
+    const int status = djmeta_analyze_json_v1(malformed.c_str(), rules, &output, &error);
+    require(status == DJMETA_STATUS_OK && output != nullptr && error == nullptr,
+            "native ABI should preserve malformed input and still return analysis");
+    const std::string json(output);
+    require(json.find("\"field\":\"TITLE\"") == std::string::npos &&
+            json.find("\"field\":\"ARTIST\"") != std::string::npos,
+            "malformed UTF-8 input must not produce partial SAFE TITLE proposals");
+    djmeta_free_string_v1(output);
+}
+
 void test_errors_do_not_cross_abi() {
     char* output = nullptr;
     char* error = nullptr;
@@ -117,6 +140,7 @@ int main() {
     test_success();
     test_schema_v2_unicode_whitespace();
     test_structured_fields_preserved_through_shared_native_abi();
+    test_malformed_utf8_value_has_no_partial_safe_proposals();
     test_errors_do_not_cross_abi();
     std::cout << "PASS: djmeta native analysis ABI\n";
     return 0;

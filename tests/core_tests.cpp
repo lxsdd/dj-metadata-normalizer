@@ -108,6 +108,35 @@ void test_unicode_whitespace_schema_v2() {
             "malformed UTF-8 preservation changed metadata");
 }
 
+void test_invalid_utf8_never_produces_generic_safe_whitespace_changes() {
+    const std::vector<std::string> invalid{
+        std::string("  Bad ") + std::string("\xC2", 1) + "  title ",
+        std::string("  Stray ") + std::string("\x80", 1) + "  continuation ",
+        std::string("  Overlong ") + std::string("\xC0\xAF", 2) + "  value ",
+        std::string("  Surrogate ") + std::string("\xED\xA0\x80", 3) + "  value ",
+        std::string("  TooHigh ") + std::string("\xF4\x90\x80\x80", 4) + "  value ",
+        std::string("\xC2\xA0") + "  Broken " + std::string("\xC2", 1) + "   "
+    };
+    const djmeta::MetadataDocument input{{{"TITLE", invalid}, {"ARTIST", {"  Good  Artist  "}}}};
+    const auto result = djmeta::Engine{}.analyze(input,
+        {unicode_whitespace_rule(), trim_rule(), collapse_rule()}, "v2-malformed-guard");
+    require(result.canonical_preview.fields[0] == input.fields[0],
+            "malformed UTF-8 must not be partially rewritten by SAFE rules");
+    require(result.proposals.size() == 1 &&
+            result.proposals[0].field == "ARTIST" &&
+            result.proposals[0].proposed_value == "Good Artist",
+            "valid neighbor must normalize without emitting invalid-value proposals");
+    for (const auto& change : result.changes)
+        require(change.field == "ARTIST",
+                "generic rule emitted an unsafe partial malformed UTF-8 change");
+    require(result.canonical_preview.fields[1].values[0] == "Good Artist",
+            "valid UTF-8 normalization unexpectedly disabled");
+    const auto repeated = djmeta::Engine{}.analyze(input,
+        {unicode_whitespace_rule(), trim_rule(), collapse_rule()}, "v2-malformed-guard");
+    require(result.proposals == repeated.proposals,
+            "malformed handling must remain deterministic");
+}
+
 void test_structured_cuesheet_and_multiline_fields_are_never_flattened() {
     const std::string cue =
         "FILE \"Album.flac\" WAVE\r\n"
@@ -401,6 +430,7 @@ int main() {
     test_preview_is_immutable_and_ordered();
     test_unicode_whitespace_schema_v2();
     test_structured_cuesheet_and_multiline_fields_are_never_flattened();
+    test_invalid_utf8_never_produces_generic_safe_whitespace_changes();
     test_exact_alias_and_safety();
     test_multivalue_preservation();
     test_duplicate_field_names_keep_structural_identity();
