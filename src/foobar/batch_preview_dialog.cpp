@@ -595,15 +595,15 @@ void show_column_menu(HWND dialog, PreviewState& state, LPARAM pointer) {
 // Shared context menu for the two independently configurable review grids.
 // Drag reorder and widths are first captured from the real Windows header.
 template<std::size_t N>
-void show_review_grid_column_menu(
+bool show_review_grid_column_menu(
     HWND dialog, HWND list, djmeta::ReviewGridLayout<N>& layout,
     const djmeta::ReviewGridLayout<N>& defaults,
     const std::array<const wchar_t*, N>& names, unsigned menu_base,
     LPARAM pointer) {
-    if (!list) return;
+    if (!list) return false;
     capture_review_grid_controls(list, layout, current_dpi(list));
     HMENU menu = CreatePopupMenu();
-    if (!menu) return;
+    if (!menu) return false;
     for (std::size_t i = 0; i < N; ++i) {
         const unsigned bit = 1u << i;
         const bool shown = (layout.visible_mask & bit) != 0;
@@ -626,11 +626,15 @@ void show_review_grid_column_menu(
     if (selected >= menu_base && selected < menu_base + N) {
         const std::size_t column = static_cast<std::size_t>(selected - menu_base);
         const bool visible = (layout.visible_mask & (1u << column)) != 0;
-        if (!djmeta::set_review_column_visible(layout, column, !visible)) return;
+        if (!djmeta::set_review_column_visible(layout, column, !visible))
+            return false;
     } else if (selected == menu_base + N) {
         layout = defaults;
-    } else return;
+        apply_review_grid_controls(list, layout, current_dpi(list));
+        return true; // sort key may also have changed: refresh source mapping
+    } else return false;
     apply_review_grid_controls(list, layout, current_dpi(list));
+    return false;
 }
 
 // The header is a child of the ListView, not the dialog. Subclassing it
@@ -644,13 +648,17 @@ LRESULT CALLBACK batch_header_proc(
         if (header == ListView_GetHeader(state->list)) {
             show_column_menu(dialog, *state, lp);
         } else if (header == ListView_GetHeader(state->metadata_track_list)) {
-            show_review_grid_column_menu(dialog, state->metadata_track_list,
-                state->track_grid, default_track_grid_layout(),
-                kTrackGridColumnNames, kTrackColumnMenuBase, lp);
+            if (show_review_grid_column_menu(dialog, state->metadata_track_list,
+                    state->track_grid, default_track_grid_layout(),
+                    kTrackGridColumnNames, kTrackColumnMenuBase, lp)) {
+                update_master_table(*state);
+                update_metadata_table(*state);
+            }
         } else if (header == ListView_GetHeader(state->metadata_list)) {
-            show_review_grid_column_menu(dialog, state->metadata_list,
-                state->detail_grid, default_detail_grid_layout(),
-                kDetailGridColumnNames, kDetailColumnMenuBase, lp);
+            if (show_review_grid_column_menu(dialog, state->metadata_list,
+                    state->detail_grid, default_detail_grid_layout(),
+                    kDetailGridColumnNames, kDetailColumnMenuBase, lp))
+                update_metadata_table(*state);
         } else {
             return DefSubclassProc(header, message, wp, lp);
         }
@@ -1198,15 +1206,19 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             return TRUE;
         }
         if (requested == ListView_GetHeader(state->metadata_track_list)) {
-            show_review_grid_column_menu(dialog, state->metadata_track_list,
-                state->track_grid, default_track_grid_layout(),
-                kTrackGridColumnNames, kTrackColumnMenuBase, lp);
+            if (show_review_grid_column_menu(dialog, state->metadata_track_list,
+                    state->track_grid, default_track_grid_layout(),
+                    kTrackGridColumnNames, kTrackColumnMenuBase, lp)) {
+                update_master_table(*state);
+                update_metadata_table(*state);
+            }
             return TRUE;
         }
         if (requested == ListView_GetHeader(state->metadata_list)) {
-            show_review_grid_column_menu(dialog, state->metadata_list,
-                state->detail_grid, default_detail_grid_layout(),
-                kDetailGridColumnNames, kDetailColumnMenuBase, lp);
+            if (show_review_grid_column_menu(dialog, state->metadata_list,
+                    state->detail_grid, default_detail_grid_layout(),
+                    kDetailGridColumnNames, kDetailColumnMenuBase, lp))
+                update_metadata_table(*state);
             return TRUE;
         }
     }
