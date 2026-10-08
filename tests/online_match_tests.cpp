@@ -93,7 +93,7 @@ int main() {
     Candidate deezer = strong;
     deezer.provider = "deezer";
     deezer.provider_track_id = "80";
-    const auto ranked = rank(original, {unnamed, radio, strong, duplicate, deezer, loose});
+    const auto ranked = rank(original, {unnamed, radio, strong, duplicate, deezer, uncertain});
     expect(ranked.size() == 4,
            "invalid identifiers and duplicate provider records ignored");
     expect(ranked[0].provider == "beatport" &&
