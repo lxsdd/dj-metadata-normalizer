@@ -760,10 +760,84 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             show_preview_page(dialog, *state, TabCtrl_GetCurSel(state->tabs) == 0);
             return TRUE;
         }
+        if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
+            header->code == LVN_GETDISPINFOW) {
+            auto* info = reinterpret_cast<NMLVDISPINFOW*>(lp);
+            if ((info->item.mask & LVIF_TEXT) != 0 && info->item.iItem >= 0) {
+                state->cell_buffer = track_master_cell(*state,
+                    static_cast<std::size_t>(info->item.iItem), info->item.iSubItem);
+                info->item.pszText = state->cell_buffer.data();
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
+            header->code == LVN_COLUMNCLICK) {
+            const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
+            if (click->iSubItem >= 0 && click->iSubItem < 4) {
+                if (click->iSubItem == state->track_sort_column)
+                    state->track_sort_descending = !state->track_sort_descending;
+                else {
+                    state->track_sort_column = click->iSubItem;
+                    state->track_sort_descending = false;
+                }
+                update_master_table(*state);
+                update_metadata_table(*state);
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
+            header->code == LVN_ITEMCHANGED) {
+            const auto* changed = reinterpret_cast<const NMLISTVIEW*>(lp);
+            if (!state->updating_track_selection && changed->iItem >= 0 &&
+                (changed->uNewState & LVIS_SELECTED) != 0 &&
+                (changed->uOldState & LVIS_SELECTED) == 0) {
+                const auto row = static_cast<std::size_t>(changed->iItem);
+                if (row < state->track_view_order.size()) {
+                    state->selected_track_index = state->track_view_order[row];
+                    update_metadata_table(*state);
+                }
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
+            header->code == LVN_GETINFOTIPW) {
+            auto* tip = reinterpret_cast<NMLVGETINFOTIPW*>(lp);
+            if (tip->iItem >= 0 && tip->pszText && tip->cchTextMax > 0) {
+                const auto row = static_cast<std::size_t>(tip->iItem);
+                if (row < state->track_view_order.size()) {
+                    const auto index = state->track_view_order[row];
+                    if (index < state->source_labels.size()) {
+                        const auto text = from_utf8(
+                            display_file_path(state->source_labels[index]));
+                        lstrcpynW(tip->pszText, text.c_str(), tip->cchTextMax);
+                    }
+                }
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_LIST &&
+            header->code == LVN_GETINFOTIPW) {
+            auto* tip = reinterpret_cast<NMLVGETINFOTIPW*>(lp);
+            if (tip->iItem >= 0 && tip->pszText && tip->cchTextMax > 0) {
+                const auto row = static_cast<std::size_t>(tip->iItem);
+                if (row < state->metadata_view_order.size()) {
+                    const auto index = state->metadata_view_order[row];
+                    if (index < state->focused_metadata_rows.size()) {
+                        const auto& entry = state->focused_metadata_rows[index];
+                        const auto label = from_utf8(
+                            "Rules: " + entry.rule_ids + "\nWhy: " +
+                            entry.rationales + "\nOriginal: " + entry.original +
+                            "\nProposed: " + entry.proposed);
+                        lstrcpynW(tip->pszText, label.c_str(), tip->cchTextMax);
+                    }
+                }
+            }
+            return TRUE;
+        }
         if (header && header->idFrom == IDC_METADATA_LIST &&
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
-            if (click->iSubItem >= 0 && click->iSubItem < 6) {
+            if (click->iSubItem >= 0 && click->iSubItem < 4) {
                 if (click->iSubItem == state->metadata_sort_column)
                     state->metadata_sort_descending = !state->metadata_sort_descending;
                 else {
@@ -847,6 +921,15 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     if (message != WM_COMMAND) return FALSE;
     const int id = LOWORD(wp);
     try {
+        if (id == IDC_METADATA_FILTER && HIWORD(wp) == CBN_SELCHANGE) {
+            const auto choice = SendDlgItemMessageW(
+                dialog, IDC_METADATA_FILTER, CB_GETCURSEL, 0, 0);
+            state->metadata_focus = choice == 1 ? djmeta::MetadataFocus::Extended :
+                choice == 2 ? djmeta::MetadataFocus::All :
+                djmeta::MetadataFocus::Music;
+            update_metadata_table(*state);
+            return TRUE;
+        }
         if (id == IDC_BATCH_PROFILE_PICKER && HIWORD(wp) == CBN_SELCHANGE) {
             const auto sel = SendDlgItemMessageW(
                 dialog, IDC_BATCH_PROFILE_PICKER, CB_GETCURSEL, 0, 0);
