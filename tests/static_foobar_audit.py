@@ -47,6 +47,19 @@ for token in [
     if token not in project:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: project contract missing " + token)
 
+# A single captured shared rules snapshot must be checked at each
+# transactional UI edit and during initial loading, in addition to
+# per-track metadata fingerprints.
+batch_rules_guard = (foobar / "batch_preview_dialog.cpp").read_text(encoding="utf-8")
+for token in (
+    "djmeta::RulesTextSnapshot captured_rules",
+    "verify_rules_snapshot(state.captured_rules)",
+    "verify_rules_snapshot(starting_rules)",
+    "djmeta::require_rules_snapshot(captured, current.json, current.source_label)",
+):
+    if token not in batch_rules_guard:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing shared rules stale-input gate: " + token)
+
 preview = (foobar / "preview.cpp").read_text(encoding="utf-8")
 for token in [
     "item.result.input_fingerprint",
