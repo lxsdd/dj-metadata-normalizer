@@ -652,6 +652,102 @@ void resize_batch_dialog(PreviewState& state, int width, int height) {
     }
 }
 
+void apply_review_action(HWND dialog, PreviewState& state,
+                         djmeta::ReviewAction action) {
+    const auto scope = SendDlgItemMessageW(dialog, IDC_METADATA_REVIEW_SCOPE,
+                                           CB_GETCURSEL, 0, 0);
+    if (scope < 0 || scope > 2)
+        throw std::invalid_argument("Choose a review scope.");
+
+    // The selected identity always refers to analysis.proposals; neither
+    // a sorted UI row nor a filtered field name is an edit target.
+    std::set<std::pair<std::size_t, std::size_t>> targets;
+    if (scope == 0) {
+        int row = -1;
+        while ((row = ListView_GetNextItem(state.metadata_list, row, LVNI_SELECTED)) >= 0) {
+            const auto index = static_cast<std::size_t>(row);
+            if (index >= state.metadata_view_order.size()) continue;
+            const auto proposal_row = state.metadata_view_order[index];
+            if (proposal_row >= state.focused_metadata_rows.size()) continue;
+            const auto& diff = state.focused_metadata_rows[proposal_row];
+            targets.emplace(diff.source_index, diff.proposal_index);
+        }
+    } else if (scope == 1) {
+        int row = -1;
+        while ((row = ListView_GetNextItem(state.metadata_track_list, row, LVNI_SELECTED)) >= 0) {
+            const auto index = static_cast<std::size_t>(row);
+            if (index >= state.track_view_order.size()) continue;
+            const auto track = state.track_view_order[index];
+            if (track >= state.analyses.size()) continue;
+            for (std::size_t j = 0; j < state.analyses[track].proposals.size(); ++j)
+                targets.emplace(track, j);
+        }
+    } else {
+        for (std::size_t track = 0; track < state.analyses.size(); ++track)
+            for (std::size_t j = 0; j < state.analyses[track].proposals.size(); ++j)
+                targets.emplace(track, j);
+    }
+    if (targets.empty()) {
+        MessageBoxW(dialog, L"Select changes or tracks with proposals first.",
+                    L"Metadata Review", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    std::string manual_value;
+    if (action == djmeta::ReviewAction::ManualValue) {
+        if (scope != 0 || targets.size() != 1)
+            throw std::invalid_argument(
+                "Manual replacement requires exactly one selected change.");
+        manual_value = to_utf8(read_control(dialog, IDC_METADATA_MANUAL_INPUT));
+    }
+
+    auto next_decisions = state.review_decisions;
+    auto next_entries = state.entries;
+    std::set<std::size_t> affected_tracks;
+    for (const auto& target : targets) {
+        const auto track = target.first;
+        const auto proposal = target.second;
+        if (track >= next_decisions.size() ||
+            proposal >= next_decisions[track].size() ||
+            track >= next_entries.size())
+            throw std::invalid_argument("Selection no longer matches captured proposals.");
+        next_decisions[track][proposal] = {action, manual_value};
+        affected_tracks.insert(track);
+    }
+
+    for (const auto track : affected_tracks) {
+        auto& entry = next_entries[track];
+        verify_snapshot(entry);
+        const auto current = entry.handle->get_info_ref();
+        const auto original = metadata_from_file_info(current->info());
+        const auto staged = djmeta::project_review_decisions(
+            original, state.analyses[track], next_decisions[track]);
+        entry.staged = std::move(staged.document);
+        entry.input.semantic_proposals_pending = staged.unresolved_semantic > 0;
+        entry.input.raw_relative_path.clear();
+        // Any decision invalidates prior filesystem/CUE preflight, even if a
+        // user picks the original value. No file or tag writer is invoked.
+        entry.input.filesystem_target_checked = false;
+        entry.input.cue_dependencies_checked = false;
+        if (entry.input.physical_source_qualified) {
+            entry.input.raw_relative_path = evaluate_titleformat_against_canonical(
+                entry.handle->get_location(), current->info(),
+                entry.staged, entry.route_expression);
+        }
+    }
+    // Transactional whole-batch stale-input gate before publishing preview.
+    for (const auto& entry : next_entries) verify_snapshot(entry);
+
+    state.entries = std::move(next_entries);
+    state.review_decisions = std::move(next_decisions);
+    refresh_review_summaries(state);
+    update_table(state);
+    update_master_table(state);
+    update_metadata_table(state);
+    if (action == djmeta::ReviewAction::ManualValue)
+        SetDlgItemTextW(dialog, IDC_METADATA_MANUAL_INPUT, L"");
+}
+
 void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
     const RoutePreviewChoice choice = read_choice(dialog);
     std::vector<std::size_t> selected;
@@ -1044,6 +1140,19 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     if (message != WM_COMMAND) return FALSE;
     const int id = LOWORD(wp);
     try {
+        if (HIWORD(wp) == BN_CLICKED &&
+            (id == IDC_METADATA_ACCEPT || id == IDC_METADATA_REJECT ||
+             id == IDC_METADATA_RESET || id == IDC_METADATA_USE_VALUE)) {
+            const auto action = id == IDC_METADATA_ACCEPT
+                ? djmeta::ReviewAction::Accept
+                : id == IDC_METADATA_REJECT
+                ? djmeta::ReviewAction::Reject
+                : id == IDC_METADATA_RESET
+                ? djmeta::ReviewAction::Pending
+                : djmeta::ReviewAction::ManualValue;
+            apply_review_action(dialog, *state, action);
+            return TRUE;
+        }
         if (id == IDC_METADATA_TRACK_FILTER && HIWORD(wp) == CBN_SELCHANGE) {
             const auto choice = SendDlgItemMessageW(
                 dialog, IDC_METADATA_TRACK_FILTER, CB_GETCURSEL, 0, 0);
