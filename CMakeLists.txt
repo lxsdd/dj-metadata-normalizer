@@ -5,6 +5,7 @@ project(dj_metadata_normalizer VERSION 0.1.0 LANGUAGES CXX)
 add_library(djmeta_core STATIC
     src/core/normalizer.cpp
     src/core/batch_plan.cpp
+    src/core/physical_selection.cpp
     src/core/external_cue.cpp
     src/core/cue_association.cpp
     src/core/staging.cpp
@@ -64,6 +65,15 @@ if(MSVC)
     target_compile_options(djmeta_c_api_tests PRIVATE /W4 /WX /permissive-)
 else()
     target_compile_options(djmeta_c_api_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+add_executable(djmeta_physical_selection_tests tests/physical_selection_tests.cpp)
+target_link_libraries(djmeta_physical_selection_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_physical_selection_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_physical_selection_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_physical_selection_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
 add_executable(djmeta_batch_plan_tests
@@ -203,6 +213,7 @@ else()
 endif()
 
 enable_testing()
+add_test(NAME djmeta_physical_selection_tests COMMAND djmeta_physical_selection_tests)
 add_test(NAME djmeta_review_decisions_tests COMMAND djmeta_review_decisions_tests)
 if(WIN32)
     add_test(NAME djmeta_native_preview_controls_tests
