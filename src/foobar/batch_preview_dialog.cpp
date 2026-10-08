@@ -198,6 +198,119 @@ void add_column(HWND list, int index, const wchar_t* name, int width) {
         throw std::runtime_error("Unable to add a preview table column.");
 }
 
+
+// All column IDs are logical IDs; the user may rearrange their visual order.
+constexpr const wchar_t* kBatchColumnNames[djmeta::kBatchPreviewColumnCount] = {
+    L"Source file", L"Profile", L"Proposed raw target", L"Status"
+};
+constexpr unsigned kColumnMenuBase = 41000u;
+constexpr unsigned kColumnMenuReset = 41020u;
+
+int current_dpi(HWND window) {
+    HDC device = GetDC(window);
+    if (!device) return 96;
+    const int dpi = GetDeviceCaps(device, LOGPIXELSX);
+    ReleaseDC(window, device);
+    return dpi > 0 ? dpi : 96;
+}
+int to_pixels(HWND window, int logical) {
+    return MulDiv(logical, current_dpi(window), 96);
+}
+int to_logical(HWND window, int pixels) {
+    return MulDiv(pixels, 96, current_dpi(window));
+}
+
+void show_sort_arrow(PreviewState& state) {
+    if (!state.list) return;
+    const HWND header = ListView_GetHeader(state.list);
+    if (!header) return;
+    for (int col = 0; col < djmeta::kBatchPreviewColumnCount; ++col) {
+        HDITEMW header_item{};
+        header_item.mask = HDI_FORMAT;
+        if (!Header_GetItemW(header, col, &header_item)) continue;
+        header_item.fmt &= ~(HDF_SORTUP | HDF_SORTDOWN);
+        if (col == state.layout.sort_column)
+            header_item.fmt |= state.layout.sort_descending ? HDF_SORTDOWN : HDF_SORTUP;
+        Header_SetItemW(header, col, &header_item);
+    }
+}
+
+void apply_column_layout(PreviewState& state) {
+    if (!state.list) return;
+    for (int col = 0; col < djmeta::kBatchPreviewColumnCount; ++col) {
+        const unsigned flag = 1u << static_cast<unsigned>(col);
+        const int width = (state.layout.visible_mask & flag) != 0
+            ? to_pixels(state.list, state.layout.widths[static_cast<std::size_t>(col)])
+            : 0;
+        ListView_SetColumnWidth(state.list, col, width);
+    }
+    ListView_SetColumnOrderArray(
+        state.list, djmeta::kBatchPreviewColumnCount, state.layout.order.data());
+    show_sort_arrow(state);
+}
+
+void capture_column_layout(PreviewState& state) {
+    if (!state.list) return;
+    std::array<int, djmeta::kBatchPreviewColumnCount> current_order{};
+    if (ListView_GetColumnOrderArray(
+            state.list, djmeta::kBatchPreviewColumnCount,
+            current_order.data())) {
+        state.layout.order = current_order;
+    }
+    for (int col = 0; col < djmeta::kBatchPreviewColumnCount; ++col) {
+        if ((state.layout.visible_mask & (1u << static_cast<unsigned>(col))) == 0)
+            continue; // preserve remembered width of hidden columns
+        const int pixels = ListView_GetColumnWidth(state.list, col);
+        if (pixels > 0) {
+            const int width = to_logical(state.list, pixels);
+            state.layout.widths[static_cast<std::size_t>(col)] =
+                (std::max)(48, (std::min)(3000, width));
+        }
+    }
+}
+
+void show_column_menu(HWND dialog, PreviewState& state, LPARAM pointer) {
+    if (!state.list) return;
+    capture_column_layout(state);
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    for (unsigned col = 0; col < djmeta::kBatchPreviewColumnCount; ++col) {
+        const unsigned bit = 1u << col;
+        const bool shown = (state.layout.visible_mask & bit) != 0;
+        const UINT flags = MF_STRING |
+            (shown ? MF_CHECKED : MF_UNCHECKED) |
+            (shown && state.layout.visible_mask == bit ? MF_GRAYED : 0u);
+        AppendMenuW(menu, flags, kColumnMenuBase + col, kBatchColumnNames[col]);
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kColumnMenuReset, L"Reset column layout");
+
+    POINT location{static_cast<SHORT>(LOWORD(pointer)),
+                   static_cast<SHORT>(HIWORD(pointer))};
+    if (location.x == -1 && location.y == -1) GetCursorPos(&location);
+    const UINT selected = TrackPopupMenu(menu,
+        TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY, location.x, location.y,
+        0, dialog, nullptr);
+    DestroyMenu(menu);
+
+    if (selected >= kColumnMenuBase &&
+        selected < kColumnMenuBase + djmeta::kBatchPreviewColumnCount) {
+        const unsigned column = selected - kColumnMenuBase;
+        const unsigned bit = 1u << column;
+        if ((state.layout.visible_mask & bit) != 0) {
+            if (state.layout.visible_mask == bit) return; // one visible minimum
+            state.layout.visible_mask &= ~bit;
+        } else {
+            state.layout.visible_mask |= bit;
+        }
+        apply_column_layout(state);
+    } else if (selected == kColumnMenuReset) {
+        state.layout = djmeta::default_batch_table_layout();
+        apply_column_layout(state);
+        update_table(state);
+    }
+}
+
 void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
     const RoutePreviewChoice choice = read_choice(dialog);
     std::vector<std::size_t> selected;
@@ -310,6 +423,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         add_column(state->list, 2, L"Proposed raw target", 275);
         add_column(state->list, 3, L"Status", 160);
         state->layout = load_batch_table_layout();
+        apply_column_layout(*state);
         for (const int id : {IDC_BATCH_PROFILE_NAME, IDC_BATCH_DESTINATION,
                              IDC_BATCH_PATTERN})
             SendDlgItemMessageW(dialog, id, EM_LIMITTEXT, 16384, 0);
