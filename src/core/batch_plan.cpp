@@ -17,14 +17,14 @@ std::string yesno(bool value) { return value ? "1" : "0"; }
 
 std::string plan_fingerprint(const std::vector<FilePlanItem>& items) {
     MetadataDocument document;
-    document.fields.push_back({"PLAN_CONTRACT", {"djmeta-batch-v1"}});
+    document.fields.push_back({"PLAN_CONTRACT", {"djmeta-batch-v2"}});
     for (const FilePlanItem& item : items) {
         // The existing SHA-256 metadata fingerprint uses explicit lengths for
         // every field/value and includes field ordering. Never concatenate
         // unescaped strings to construct approval identity.
         document.fields.push_back({"ITEM", {
             item.physical_id,
-            item.source_path, item.source_key,
+            item.source_path, item.source_key, item.source_guard,
             item.target_path, item.target_key,
             decimal(static_cast<int>(item.action)),
             decimal(static_cast<int>(item.role)),
@@ -93,7 +93,7 @@ bool valid_cue_state(CueLinkState value) {
 bool contains_embedded_nul(const FilePlanItem& item) {
     const std::string* fields[] = {
         &item.physical_id, &item.source_path, &item.source_key,
-        &item.target_path, &item.target_key, &item.associated_audio_id,
+        &item.source_guard, &item.target_path, &item.target_key, &item.associated_audio_id,
         &item.metadata_fingerprint, &item.planned_metadata_fingerprint,
         &item.ruleset_revision, &item.routing_profile,
         &item.naming_expression, &item.target_guard,
@@ -134,6 +134,19 @@ BatchPlanReview review_batch_plan(
         individually_approved.insert(
             approval->individually_approved_physical_ids.begin(),
             approval->individually_approved_physical_ids.end());
+
+    // The preview must correspond to ONE immutable ruleset across audio,
+    // CUE and companion rows, including rows with no physical file action.
+    // Different revisions in a single approved batch cannot be reconciled
+    // by blanket overwrite consent or by ignoring unchanged rows.
+    std::string batch_revision;
+    bool mixed_ruleset_revisions = false;
+    for (const FilePlanItem& item : items) {
+        if (item.ruleset_revision.empty()) continue;
+        if (batch_revision.empty()) batch_revision = item.ruleset_revision;
+        else if (item.ruleset_revision != batch_revision)
+            mixed_ruleset_revisions = true;
+    }
 
     std::map<std::string, std::size_t> source_key_counts;
     std::map<std::string, std::size_t> physical_id_counts;
@@ -185,6 +198,10 @@ BatchPlanReview review_batch_plan(
 
         if (contains_embedded_nul(item))
             block(decision, "EMBEDDED_NUL_IN_PLAN_IDENTITY");
+        if (mixed_ruleset_revisions)
+            block(decision, "MIXED_RULESET_REVISIONS");
+        if (item.source_guard.empty())
+            block(decision, "SOURCE_NOT_INSPECTED");
 
         if (item.cue_references_will_change && item.role != FileRole::ExternalCue)
             block(decision, "CUE_REWRITE_ON_NON_CUE_ITEM");

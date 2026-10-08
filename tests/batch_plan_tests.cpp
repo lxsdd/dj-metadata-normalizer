@@ -27,6 +27,7 @@ djmeta::FilePlanItem audio(const std::string& name) {
     item.physical_id = name;
     item.source_path = "Z:/Music/Downloads/" + name + ".mp3";
     item.source_key = "z:/music/downloads/" + name + ".mp3";
+    item.source_guard = "source-observation-" + name;
     item.target_path = "Z:/Music/Singles/" + name + ".mp3";
     item.target_key = "z:/music/singles/" + name + ".mp3";
     item.action = djmeta::FileAction::Move;
@@ -367,6 +368,7 @@ void test_external_cue_dependencies() {
     cue.physical_id = "cue-A";
     cue.source_path = "Z:/Music/Downloads/A.cue";
     cue.source_key = "z:/music/downloads/a.cue";
+    cue.source_guard = "source-observation-" + cue.source_key;
     cue.target_path = "Z:/Music/Singles/A.cue";
     cue.target_key = "z:/music/singles/a.cue";
     cue.action = djmeta::FileAction::Move;
@@ -402,6 +404,7 @@ void test_contradictory_audio_cue_evidence_rejected() {
     cue.physical_id = "contradictory-cue";
     cue.source_path = "Z:/Music/Downloads/contradictory.cue";
     cue.source_key = "z:/music/downloads/contradictory.cue";
+    cue.source_guard = "source-observation-" + cue.source_key;
     cue.target_path = "Z:/Music/Singles/contradictory.cue";
     cue.target_key = "z:/music/singles/contradictory.cue";
     cue.action = djmeta::FileAction::Move;
@@ -476,6 +479,7 @@ void test_inactive_cue_relationships_and_tag_only_audio_guard() {
     cue.associated_audio_id = tag_only.physical_id;
     cue.source_path = "Z:/Music/Downloads/cue-tag-only.cue";
     cue.source_key = "z:/music/downloads/cue-tag-only.cue";
+    cue.source_guard = "source-observation-" + cue.source_key;
     cue.ruleset_revision = tag_only.ruleset_revision;
     cue.cue_links = djmeta::CueLinkState::Verified;
     cue.cue_source_fingerprint = "unchanged-cue-source";
@@ -517,6 +521,7 @@ void test_cue_rewrite_only_on_external_cue_items() {
     companion.physical_id = "cover-art";
     companion.source_path = "Z:/Music/Downloads/cover.jpg";
     companion.source_key = "z:/music/downloads/cover.jpg";
+    companion.source_guard = "source-observation-" + companion.source_key;
     companion.associated_audio_id = "wrong-cue-role";
     companion.companion_policy_qualified = true;
     companion.cue_links = djmeta::CueLinkState::Unchecked;
@@ -537,6 +542,7 @@ void test_cue_rewrite_only_on_external_cue_items() {
     cue.physical_id = "cue-reference-change";
     cue.source_path = "Z:/Music/Downloads/track.cue";
     cue.source_key = "z:/music/downloads/track.cue";
+    cue.source_guard = "source-observation-" + cue.source_key;
     audio_item.cue_links = djmeta::CueLinkState::Verified;
     const auto valid = djmeta::review_batch_plan({audio_item, cue});
     require(valid.ready_to_apply && valid.blocked == 0 &&
@@ -551,6 +557,7 @@ void test_companion_files_need_explicit_or_qualified_policy() {
     art.physical_id = "art-A";
     art.source_path = "Z:/Music/Downloads/cover.jpg";
     art.source_key = "z:/music/downloads/cover.jpg";
+    art.source_guard = "source-observation-" + art.source_key;
     art.target_path = "Z:/Music/Singles/cover.jpg";
     art.target_key = "z:/music/singles/cover.jpg";
     art.action = djmeta::FileAction::Move;
@@ -630,14 +637,15 @@ void test_metadata_only_requires_physical_identity() {
             valid.decisions[0].status == djmeta::PlanStatus::Unchanged,
             "qualified metadata-only source remains an unchanged file plan");
 
-    for (int missing = 0; missing < 6; ++missing) {
+    for (int missing = 0; missing < 7; ++missing) {
         auto invalid = item;
         switch (missing) {
             case 0: invalid.physical_id.clear(); break;
             case 1: invalid.source_path.clear(); break;
             case 2: invalid.source_key.clear(); break;
             case 3: invalid.ruleset_revision.clear(); break;
-            case 4: invalid.metadata_fingerprint.clear(); break;
+            case 4: invalid.source_guard.clear(); break;
+            case 5: invalid.metadata_fingerprint.clear(); break;
             default: invalid.planned_metadata_fingerprint.clear(); break;
         }
         const auto blocked = djmeta::review_batch_plan({invalid});
@@ -645,6 +653,7 @@ void test_metadata_only_requires_physical_identity() {
                 blocked.decisions[0].status == djmeta::PlanStatus::Blocked &&
                 has_reason(blocked.decisions[0], missing < 4
                     ? "MISSING_SOURCE_OR_RULESET_IDENTITY"
+                    : missing == 4 ? "SOURCE_NOT_INSPECTED"
                     : "MISSING_METADATA_FINGERPRINT"),
                 "metadata-only source missing physical identity must fail closed");
         const djmeta::BatchApproval approve{blocked.plan_fingerprint, true};
@@ -686,11 +695,11 @@ void test_embedded_nul_in_plan_identity_fails_closed() {
     const auto inject_nul = [](std::string& field) {
         field.insert(field.size() / 2, 1, '\0');
     };
-    for (int field_index = 0; field_index < 14; ++field_index) {
+    for (int field_index = 0; field_index < 15; ++field_index) {
         auto item = sample;
         std::string* fields[]{
             &item.physical_id, &item.source_path, &item.source_key,
-            &item.target_path, &item.target_key, &item.associated_audio_id,
+            &item.source_guard, &item.target_path, &item.target_key, &item.associated_audio_id,
             &item.metadata_fingerprint, &item.planned_metadata_fingerprint,
             &item.ruleset_revision, &item.routing_profile,
             &item.naming_expression, &item.target_guard,
@@ -798,6 +807,67 @@ void test_frozen_approved_snapshot_is_detached_and_non_executing() {
     } catch (const std::invalid_argument&) {}
 }
 
+
+void test_source_observation_approval_binding() {
+    auto a = audio("observed-A");
+    auto b = audio("observed-B");
+    const auto batch = std::vector<djmeta::FilePlanItem>{a, b};
+    const auto preview = djmeta::review_batch_plan(batch);
+    require(preview.ready_to_apply, "inspected sources must have a ready preview");
+
+    const djmeta::BatchApproval approval{preview.plan_fingerprint, true};
+    b.source_guard = "changed-source-observation";
+    const auto stale = djmeta::review_batch_plan({a, b}, &approval);
+    require(stale.blocked == 2 && !stale.ready_to_apply &&
+            has_reason(stale.decisions[0], "STALE_BATCH_APPROVAL") &&
+            has_reason(stale.decisions[1], "STALE_BATCH_APPROVAL"),
+            "changed source identity must invalidate the entire approval");
+
+    auto missing = audio("unprobed");
+    missing.source_guard.clear();
+    auto result = djmeta::review_batch_plan({missing});
+    require(result.blocked == 1 && !result.ready_to_apply &&
+            has_reason(result.decisions[0], "SOURCE_NOT_INSPECTED"),
+            "missing host source probe must block file changes");
+    missing.action = djmeta::FileAction::None;
+    missing.target_path.clear();
+    missing.target_key.clear();
+    result = djmeta::review_batch_plan({missing});
+    require(result.blocked == 1 &&
+            has_reason(result.decisions[0], "SOURCE_NOT_INSPECTED"),
+            "tag-only rows must not bypass host source probe");
+
+    const auto valid = djmeta::review_batch_plan({audio("qualified")});
+    require(valid.ready_to_apply, "qualified unrelated source remains plannable");
+}
+
+void test_mixed_ruleset_revisions_fail_closed() {
+    auto a = audio("revision-A");
+    auto b = audio("revision-B");
+    b.action = djmeta::FileAction::None;
+    b.target_path.clear();
+    b.target_key.clear();
+    b.ruleset_revision = "other-revision";
+    const auto review = djmeta::review_batch_plan({a, b});
+    require(review.blocked == 2 && !review.ready_to_apply &&
+            has_reason(review.decisions[0], "MIXED_RULESET_REVISIONS") &&
+            has_reason(review.decisions[1], "MIXED_RULESET_REVISIONS"),
+            "mixed rule revisions must block the whole batch, including tag-only rows");
+    const djmeta::BatchApproval approval{review.plan_fingerprint, true};
+    const auto overridden = djmeta::review_batch_plan({a, b}, &approval);
+    require(overridden.blocked == 2 && !overridden.ready_to_apply,
+            "bulk overwrite approval cannot authorize mixed revisions");
+    try {
+        (void)djmeta::freeze_reviewed_batch_preview({a, b}, approval);
+        require(false, "mixed ruleset plan must never be frozen");
+    } catch (const std::invalid_argument&) {}
+
+    b.ruleset_revision = a.ruleset_revision;
+    const auto coherent = djmeta::review_batch_plan({a, b});
+    require(coherent.ready_to_apply && coherent.blocked == 0,
+            "matching revisions preserve mixed file/tag-only plans");
+}
+
 void test_noop_and_missing_ids() {
     auto a = audio("A");
     a.target_key = a.source_key;
@@ -822,6 +892,8 @@ void test_noop_and_missing_ids() {
 
 int main() {
     test_ready_and_immutable();
+    test_source_observation_approval_binding();
+    test_mixed_ruleset_revisions_fail_closed();
     test_batch_overwrite_once_and_target_guard();
     test_large_batch_one_confirmation();
     test_many_individual_overwrite_approvals_are_indexed();
