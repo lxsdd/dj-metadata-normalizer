@@ -196,12 +196,12 @@ int main() {
     check(whitespace != nullptr &&
           (GetWindowLongPtrW(whitespace, GWL_STYLE) & BS_TYPEMASK) == BS_AUTOCHECKBOX,
           "real production show-whitespace checkbox is checkable");
-    Button_SetCheck(whitespace, BST_CHECKED);
+    SendMessageW(whitespace, BM_SETCHECK, BST_CHECKED, 0);
     SendMessageW(dialog, WM_COMMAND,
                  MAKEWPARAM(IDC_METADATA_VISIBLE_WHITESPACE, BN_CLICKED),
                  reinterpret_cast<LPARAM>(whitespace));
     check(last_command == djmeta_foobar::PreviewCommand::VisibleWhitespaceChanged &&
-          Button_GetCheck(whitespace) == BST_CHECKED,
+          SendMessageW(whitespace, BM_GETCHECK, 0, 0) == BST_CHECKED,
           "real checkbox sends shared production display-event command");
 
     const std::wstring original = L"  A\tB\u00a0C\u202fD\u200bE\ufeff\r\n";
