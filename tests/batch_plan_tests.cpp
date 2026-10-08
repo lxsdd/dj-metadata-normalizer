@@ -366,6 +366,49 @@ void test_contradictory_audio_cue_evidence_rejected() {
             "tag-only audio cannot silently authorize contradictory CUE rewrite");
 }
 
+void test_cue_rewrite_only_on_external_cue_items() {
+    auto audio_item = audio("wrong-cue-role");
+    audio_item.action = djmeta::FileAction::None;
+    audio_item.cue_links = djmeta::CueLinkState::NoExternalCue;
+    audio_item.cue_references_will_change = true;
+    auto result = djmeta::review_batch_plan({audio_item});
+    require(result.blocked == 1 && !result.ready_to_apply &&
+            has_reason(result.decisions[0], "CUE_REWRITE_ON_NON_CUE_ITEM"),
+            "audio row must never act as a CUE FILE-reference rewrite");
+
+    auto companion = audio_item;
+    companion.role = djmeta::FileRole::Companion;
+    companion.physical_id = "cover-art";
+    companion.source_path = "Z:/Music/Downloads/cover.jpg";
+    companion.source_key = "z:/music/downloads/cover.jpg";
+    companion.associated_audio_id = "wrong-cue-role";
+    companion.companion_policy_qualified = true;
+    companion.cue_links = djmeta::CueLinkState::Unchecked;
+    audio_item.cue_references_will_change = false;
+    const auto mixed = djmeta::review_batch_plan({audio_item, companion});
+    require(mixed.blocked == 1 &&
+            has_reason(mixed.decisions[1], "CUE_REWRITE_ON_NON_CUE_ITEM"),
+            "companion file cannot smuggle CUE rewrites through a qualified sidecar policy");
+
+    // A verified external CUE is permitted to preview just a FILE-reference
+    // rewrite without renaming/moving the physical cue file itself.
+    auto cue = companion;
+    cue.role = djmeta::FileRole::ExternalCue;
+    cue.cue_links = djmeta::CueLinkState::Verified;
+    cue.cue_source_fingerprint = "verified-cue-input";
+    cue.cue_postimage_fingerprint = "verified-cue-output";
+    cue.companion_policy_qualified = false;
+    cue.physical_id = "cue-reference-change";
+    cue.source_path = "Z:/Music/Downloads/track.cue";
+    cue.source_key = "z:/music/downloads/track.cue";
+    audio_item.cue_links = djmeta::CueLinkState::Verified;
+    const auto valid = djmeta::review_batch_plan({audio_item, cue});
+    require(valid.ready_to_apply && valid.blocked == 0 &&
+            valid.decisions[0].status == djmeta::PlanStatus::Unchanged &&
+            valid.decisions[1].status == djmeta::PlanStatus::Ready,
+            "qualified external CUE-only rewrite must remain a valid read-only plan");
+}
+
 void test_companion_files_need_explicit_or_qualified_policy() {
     auto a = audio("A");
     djmeta::FilePlanItem art;
@@ -474,6 +517,7 @@ int main() {
     test_duplicate_subsong_source_and_self_copy();
     test_external_cue_dependencies();
     test_contradictory_audio_cue_evidence_rejected();
+    test_cue_rewrite_only_on_external_cue_items();
     test_noop_and_missing_ids();
     test_unknown_plan_enum_values_fail_closed();
     test_companion_files_need_explicit_or_qualified_policy();
