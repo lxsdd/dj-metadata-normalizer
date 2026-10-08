@@ -260,6 +260,58 @@ void test_external_cue_dependencies() {
             "unverified CUE source bytes must block operation");
 }
 
+void test_contradictory_audio_cue_evidence_rejected() {
+    auto source = audio("contradictory");
+    djmeta::FilePlanItem cue;
+    cue.physical_id = "contradictory-cue";
+    cue.source_path = "Z:/Music/Downloads/contradictory.cue";
+    cue.source_key = "z:/music/downloads/contradictory.cue";
+    cue.target_path = "Z:/Music/Singles/contradictory.cue";
+    cue.target_key = "z:/music/singles/contradictory.cue";
+    cue.action = djmeta::FileAction::Move;
+    cue.role = djmeta::FileRole::ExternalCue;
+    cue.associated_audio_id = source.physical_id;
+    cue.ruleset_revision = source.ruleset_revision;
+    cue.cue_links = djmeta::CueLinkState::Verified;
+    cue.cue_source_fingerprint = "verified-source-cue-bytes";
+    cue.cue_postimage_fingerprint = "verified-proposed-cue-bytes";
+    cue.cue_references_will_change = true;
+    cue.target_presence = djmeta::TargetPresence::Missing;
+
+    // The host cannot simultaneously assert "no external CUE" and supply
+    // an explicitly associated, active CUE dependency in the same plan.
+    const auto contradict = djmeta::review_batch_plan({source, cue});
+    require(contradict.blocked == 2 && !contradict.ready_to_apply &&
+            has_reason(contradict.decisions[0],
+                "CUE_ASSOCIATION_CONTRADICTS_NO_EXTERNAL_CUE") &&
+            has_reason(contradict.decisions[1],
+                "CUE_REFERENCE_PLAN_UNQUALIFIED"),
+            "contradictory audio/CUE association must block both sides");
+
+    const djmeta::BatchApproval approval{contradict.plan_fingerprint, true};
+    const auto still_blocked = djmeta::review_batch_plan({source, cue}, &approval);
+    require(still_blocked.blocked == 2 && !still_blocked.ready_to_apply,
+            "blanket overwrite approval cannot repair CUE identity contradiction");
+
+    source.cue_links = djmeta::CueLinkState::Verified;
+    const auto qualified = djmeta::review_batch_plan({source, cue});
+    require(qualified.ready_to_apply && qualified.blocked == 0,
+            "mutually qualified CUE and audio evidence must retain a clean preview");
+
+    // A selected tag-only audio row still has a real physical identity:
+    // the associated CUE must not bypass its negative cue assertion.
+    source.action = djmeta::FileAction::None;
+    const auto tag_only = djmeta::review_batch_plan({source, cue});
+    require(tag_only.decisions[1].status == djmeta::PlanStatus::Ready,
+            "verified tag-only audio can still anchor an associated CUE plan");
+    source.cue_links = djmeta::CueLinkState::NoExternalCue;
+    const auto tag_only_conflict = djmeta::review_batch_plan({source, cue});
+    require(tag_only_conflict.blocked == 1 &&
+            has_reason(tag_only_conflict.decisions[1],
+                "CUE_REFERENCE_PLAN_UNQUALIFIED"),
+            "tag-only audio cannot silently authorize contradictory CUE rewrite");
+}
+
 void test_companion_files_need_explicit_or_qualified_policy() {
     auto a = audio("A");
     djmeta::FilePlanItem art;
@@ -317,6 +369,7 @@ int main() {
     test_intra_batch_conflicts_cannot_be_overridden();
     test_duplicate_subsong_source_and_self_copy();
     test_external_cue_dependencies();
+    test_contradictory_audio_cue_evidence_rejected();
     test_noop_and_missing_ids();
     test_companion_files_need_explicit_or_qualified_policy();
     std::cout << "PASS: deterministic read-only batch plan preflight tests\n";

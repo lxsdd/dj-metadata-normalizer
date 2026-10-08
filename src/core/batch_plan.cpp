@@ -76,13 +76,18 @@ BatchPlanReview review_batch_plan(
     std::map<std::string, std::size_t> physical_id_counts;
     std::map<std::string, std::size_t> target_key_counts;
     std::set<std::string> audio_ids;
+    std::map<std::string, CueLinkState> audio_cue_states;
     std::set<std::string> all_source_keys;
     std::map<std::string, std::size_t> cue_counts;
 
     for (const FilePlanItem& item : items) {
         if (!item.source_key.empty()) all_source_keys.insert(item.source_key);
-        if (item.role == FileRole::Audio && !item.physical_id.empty())
+        if (item.role == FileRole::Audio && !item.physical_id.empty()) {
             audio_ids.insert(item.physical_id);
+            // Preserve the host-qualified relationship state of every audio
+            // item, even when selected only for metadata updates.
+            audio_cue_states[item.physical_id] = item.cue_links;
+        }
         if (!active_item(item)) continue;
         if (!item.source_key.empty()) ++source_key_counts[item.source_key];
         if (!item.physical_id.empty()) ++physical_id_counts[item.physical_id];
@@ -116,6 +121,9 @@ BatchPlanReview review_batch_plan(
             block(decision, "DUPLICATE_PHYSICAL_ID");
 
         if (item.role == FileRole::Audio) {
+            if (item.cue_links == CueLinkState::NoExternalCue &&
+                cue_counts[item.physical_id] != 0)
+                block(decision, "CUE_ASSOCIATION_CONTRADICTS_NO_EXTERNAL_CUE");
             if (item.cue_links == CueLinkState::Unchecked ||
                 item.cue_links == CueLinkState::Unresolved) {
                 block(decision, "CUE_DEPENDENCY_UNQUALIFIED");
@@ -131,6 +139,7 @@ BatchPlanReview review_batch_plan(
         } else if (item.role == FileRole::ExternalCue) {
             if (item.associated_audio_id.empty() ||
                 audio_ids.count(item.associated_audio_id) == 0 ||
+                audio_cue_states[item.associated_audio_id] != CueLinkState::Verified ||
                 item.cue_links != CueLinkState::Verified ||
                 item.cue_source_fingerprint.empty() ||
                 item.cue_postimage_fingerprint.empty()) {
