@@ -14,6 +14,7 @@
 
 #include "djmeta/batch_preview.h"
 #include "djmeta/metadata_diff.h"
+#include "djmeta/review_decisions.h"
 #include "djmeta/track_review.h"
 #include "djmeta/table_layout.h"
 #include "djmeta/staging.h"
@@ -37,6 +38,7 @@ struct PreviewEntry {
     djmeta::MetadataDocument staged;
     djmeta::BatchPreviewInputRow input;
     std::string input_fingerprint;
+    std::string route_expression; // per-row foobar titleformat for review recomputation
 };
 
 struct ResizableControl {
@@ -66,6 +68,7 @@ struct PreviewState {
     HWND metadata_track_list = nullptr;
     HWND metadata_filter = nullptr;
     HWND metadata_track_filter = nullptr;
+    HWND metadata_scope = nullptr;
     HWND tabs = nullptr;
     bool show_metadata = true;
     int metadata_sort_column = 0;
@@ -74,12 +77,14 @@ struct PreviewState {
     bool track_sort_descending = false;
     bool updating_track_selection = false;
     std::size_t selected_track_index = 0;
+    std::size_t focused_track_index = (std::numeric_limits<std::size_t>::max)();
     djmeta::MetadataFocus metadata_focus = djmeta::MetadataFocus::Music;
     djmeta::TrackDiscovery track_discovery = djmeta::TrackDiscovery::All;
     std::vector<djmeta::TrackReviewSummary> track_summaries;
     std::vector<std::size_t> track_view_order;
     std::vector<djmeta::MetadataDiffRow> focused_metadata_rows;
     std::vector<djmeta::AnalysisResult> analyses;
+    std::vector<std::vector<djmeta::ReviewDecision>> review_decisions;
     std::vector<djmeta::MetadataDiffRow> metadata_rows;
     std::vector<std::size_t> metadata_view_order;
     std::vector<std::string> source_labels;
@@ -263,6 +268,45 @@ std::wstring track_master_cell(PreviewState& state, std::size_t row, int col) {
     }
 }
 
+const djmeta::ReviewDecision* decision_for_row(
+    const PreviewState& state, const djmeta::MetadataDiffRow& item) {
+    if (item.source_index >= state.review_decisions.size()) return nullptr;
+    const auto& per_track = state.review_decisions[item.source_index];
+    return item.proposal_index < per_track.size()
+        ? &per_track[item.proposal_index] : nullptr;
+}
+
+std::wstring review_decision_caption(
+    const PreviewState& state, const djmeta::MetadataDiffRow& item) {
+    const auto* decision = decision_for_row(state, item);
+    if (!decision) return L"Unavailable";
+    switch (decision->action) {
+        case djmeta::ReviewAction::Pending:
+            return item.safety == djmeta::SafetyClass::Safe ? L"SAFE preview" : L"Pending";
+        case djmeta::ReviewAction::Accept: return L"Accepted";
+        case djmeta::ReviewAction::Reject: return L"Original";
+        case djmeta::ReviewAction::ManualValue: return L"Manual";
+    }
+    return L"Unavailable";
+}
+
+void refresh_review_summaries(PreviewState& state) {
+    state.track_summaries = djmeta::summarize_track_changes(
+        state.entries.size(), state.metadata_rows);
+    for (std::size_t i = 0; i < state.analyses.size() &&
+                          i < state.track_summaries.size(); ++i) {
+        std::size_t pending_review = 0;
+        for (std::size_t j = 0; j < state.analyses[i].proposals.size(); ++j) {
+            if (state.analyses[i].proposals[j].safety == djmeta::SafetyClass::Review &&
+                i < state.review_decisions.size() &&
+                j < state.review_decisions[i].size() &&
+                state.review_decisions[i][j].action == djmeta::ReviewAction::Pending)
+                ++pending_review;
+        }
+        state.track_summaries[i].review_required = pending_review;
+    }
+}
+
 std::wstring metadata_cell_text(PreviewState& state,
                                 std::size_t row, int column) {
     if (row >= state.metadata_view_order.size()) return {};
@@ -272,23 +316,58 @@ std::wstring metadata_cell_text(PreviewState& state,
     switch (column) {
         case 0: return from_utf8(item.field);
         case 1: return from_utf8(item.original);
-        case 2: return from_utf8(item.proposed);
+        case 2: {
+            const auto* decision = decision_for_row(state, item);
+            return from_utf8(decision &&
+                decision->action == djmeta::ReviewAction::ManualValue
+                ? decision->manual_value : item.proposed);
+        }
         case 3: return from_utf8(djmeta::to_string(item.safety));
+        case 4: return review_decision_caption(state, item);
         default: return {};
     }
 }
 
 void update_metadata_table(PreviewState& state) {
+    // Preserve source-local proposal identity rather than virtual row position.
+    std::set<std::size_t> selected_proposals;
+    if (state.metadata_list &&
+        state.focused_track_index == state.selected_track_index) {
+        int row = -1;
+        while ((row = ListView_GetNextItem(state.metadata_list, row, LVNI_SELECTED)) >= 0) {
+            const auto view_row = static_cast<std::size_t>(row);
+            if (view_row < state.metadata_view_order.size() &&
+                state.metadata_view_order[view_row] < state.focused_metadata_rows.size())
+                selected_proposals.insert(
+                    state.focused_metadata_rows[state.metadata_view_order[view_row]].proposal_index);
+        }
+    }
     state.focused_metadata_rows = djmeta::selected_track_diffs(
         state.metadata_rows, state.selected_track_index, state.metadata_focus);
-    const int logical_sort_column = state.metadata_sort_column+1;
+    state.focused_track_index = state.selected_track_index;
+    const int logical_sort_column = state.metadata_sort_column == 4
+        ? 99 : state.metadata_sort_column + 1;
     state.metadata_view_order = djmeta::sort_metadata_diff_rows(
         state.focused_metadata_rows, state.source_labels,
         logical_sort_column, state.metadata_sort_descending);
+    if (state.metadata_sort_column == 4) {
+        std::stable_sort(state.metadata_view_order.begin(), state.metadata_view_order.end(),
+            [&](std::size_t a, std::size_t b) {
+                const auto lhs = review_decision_caption(state, state.focused_metadata_rows[a]);
+                const auto rhs = review_decision_caption(state, state.focused_metadata_rows[b]);
+                return state.metadata_sort_descending ? lhs > rhs : lhs < rhs;
+            });
+    }
     if (state.metadata_list) {
         ListView_SetItemCountEx(state.metadata_list,
             static_cast<int>(state.focused_metadata_rows.size()),
             LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+        ListView_SetItemState(state.metadata_list, -1, 0, LVIS_SELECTED);
+        for (std::size_t row = 0; row < state.metadata_view_order.size(); ++row)
+            if (selected_proposals.count(
+                    state.focused_metadata_rows[state.metadata_view_order[row]].proposal_index))
+                ListView_SetItemState(state.metadata_list, static_cast<int>(row),
+                    LVIS_SELECTED, LVIS_SELECTED);
         InvalidateRect(state.metadata_list, nullptr, FALSE);
     }
     if (state.dialog && state.show_metadata &&
@@ -309,6 +388,10 @@ void update_metadata_table(PreviewState& state) {
 }
 
 void update_master_table(PreviewState& state) {
+    // Retain every underlying source identity, not just the focused row.
+    // This is essential for Selected tracks actions after a sort/filter.
+    const auto previously_selected =
+        selected_native_view_ids(state.metadata_track_list, state.track_view_order);
     std::vector<std::string> labels;
     labels.reserve(state.source_labels.size());
     for(const auto& path:state.source_labels)
@@ -318,26 +401,28 @@ void update_master_table(PreviewState& state) {
         state.track_sort_descending);
     state.track_view_order = djmeta::filter_track_view(
         state.track_summaries, state.track_view_order, state.track_discovery);
-    // The chosen item is an underlying source identity, never a view row.
-    // If a filter hides it, choose the first visible track or no selection.
-    if (std::find(state.track_view_order.begin(), state.track_view_order.end(),
-                  state.selected_track_index) == state.track_view_order.end())
-        state.selected_track_index = state.track_view_order.empty()
-            ? state.track_summaries.size() : state.track_view_order.front();
+    const std::set<std::size_t> visible(state.track_view_order.begin(),
+                                        state.track_view_order.end());
+    std::vector<std::size_t> selected;
+    for (const auto id : previously_selected)
+        if (visible.count(id) != 0) selected.push_back(id);
+    if (selected.empty() && !state.track_view_order.empty()) {
+        selected.push_back(visible.count(state.selected_track_index)
+            ? state.selected_track_index : state.track_view_order.front());
+    }
+    // Focus and selected-track detail always refer to one selected source.
+    if (!selected.empty() &&
+        std::find(selected.begin(), selected.end(), state.selected_track_index) == selected.end())
+        state.selected_track_index = selected.front();
+    else if (selected.empty())
+        state.selected_track_index = state.track_summaries.size();
     if (!state.metadata_track_list) return;
     state.updating_track_selection = true;
     ListView_SetItemCountEx(state.metadata_track_list,
         static_cast<int>(state.track_view_order.size()),
         LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
-    ListView_SetItemState(state.metadata_track_list, -1, 0, LVIS_SELECTED);
-    for(std::size_t i=0;i<state.track_view_order.size();++i) {
-        if(state.track_view_order[i]==state.selected_track_index) {
-            ListView_SetItemState(state.metadata_track_list,
-                static_cast<int>(i), LVIS_SELECTED|LVIS_FOCUSED,
-                LVIS_SELECTED|LVIS_FOCUSED);
-            break;
-        }
-    }
+    restore_native_view_selection(state.metadata_track_list, state.track_view_order,
+                                  selected, state.selected_track_index);
     state.updating_track_selection = false;
     InvalidateRect(state.metadata_track_list, nullptr, FALSE);
 }
@@ -348,6 +433,11 @@ void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
     ShowWindow(state.metadata_track_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_filter, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_track_filter, metadata ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.metadata_scope, metadata ? SW_SHOW : SW_HIDE);
+    for (int id : {IDC_METADATA_ACCEPT, IDC_METADATA_REJECT,
+                   IDC_METADATA_RESET, IDC_METADATA_MANUAL_INPUT,
+                   IDC_METADATA_USE_VALUE})
+        ShowWindow(GetDlgItem(dialog,id), metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER_LABEL),
         metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_FILTER_LABEL),
@@ -538,6 +628,7 @@ void capture_resize_layout(PreviewState& state) {
             id == IDC_BATCH_LIST || id == IDC_METADATA_LIST ||
             id == IDC_BATCH_TABS || id == IDC_BATCH_PROFILE_PICKER ||
             id == IDC_BATCH_DESTINATION || id == IDC_BATCH_PATTERN ||
+            id == IDC_METADATA_MANUAL_INPUT ||
             (id == -1 && layout.original.right >
              current.initial_client_width - 24);
         layout.stretch_height = id == IDC_BATCH_LIST ||
@@ -547,7 +638,8 @@ void capture_resize_layout(PreviewState& state) {
             id != IDC_METADATA_TRACK_LIST &&
             id != IDC_BATCH_TABS &&
             layout.original.top >= current.initial_list_bottom;
-        layout.shift_right = id == IDC_BATCH_APPLY_SELECTED ||
+        layout.shift_right = id == IDC_METADATA_USE_VALUE ||
+                             id == IDC_BATCH_APPLY_SELECTED ||
                              id == IDC_BATCH_APPLY_ALL || id == IDCANCEL;
         current.resize_controls.push_back(layout);
         return TRUE;
@@ -569,6 +661,96 @@ void resize_batch_dialog(PreviewState& state, int width, int height) {
                      (std::max)(8, w), (std::max)(8, h),
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
+}
+
+void apply_review_action(HWND dialog, PreviewState& state,
+                         djmeta::ReviewAction action) {
+    const auto scope = SendDlgItemMessageW(dialog, IDC_METADATA_REVIEW_SCOPE,
+                                           CB_GETCURSEL, 0, 0);
+    if (scope < 0 || scope > 2)
+        throw std::invalid_argument("Choose a review scope.");
+
+    // The selected identity always refers to analysis.proposals; neither
+    // a sorted UI row nor a filtered field name is an edit target.
+    std::set<std::pair<std::size_t, std::size_t>> targets;
+    if (scope == 0) {
+        for (const auto proposal_row :
+                selected_native_view_ids(state.metadata_list, state.metadata_view_order)) {
+            if (proposal_row >= state.focused_metadata_rows.size()) continue;
+            const auto& diff = state.focused_metadata_rows[proposal_row];
+            targets.emplace(diff.source_index, diff.proposal_index);
+        }
+    } else if (scope == 1) {
+        for (const auto track :
+                selected_native_view_ids(state.metadata_track_list, state.track_view_order)) {
+            if (track >= state.analyses.size()) continue;
+            for (std::size_t j = 0; j < state.analyses[track].proposals.size(); ++j)
+                targets.emplace(track, j);
+        }
+    } else {
+        for (std::size_t track = 0; track < state.analyses.size(); ++track)
+            for (std::size_t j = 0; j < state.analyses[track].proposals.size(); ++j)
+                targets.emplace(track, j);
+    }
+    if (targets.empty()) {
+        MessageBoxW(dialog, L"Select changes or tracks with proposals first.",
+                    L"Metadata Review", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    std::string manual_value;
+    if (action == djmeta::ReviewAction::ManualValue) {
+        if (scope != 0 || targets.size() != 1)
+            throw std::invalid_argument(
+                "Manual replacement requires exactly one selected change.");
+        manual_value = to_utf8(read_control(dialog, IDC_METADATA_MANUAL_INPUT));
+    }
+
+    auto next_decisions = state.review_decisions;
+    auto next_entries = state.entries;
+    std::set<std::size_t> affected_tracks;
+    for (const auto& target : targets) {
+        const auto track = target.first;
+        const auto proposal = target.second;
+        if (track >= next_decisions.size() ||
+            proposal >= next_decisions[track].size() ||
+            track >= next_entries.size())
+            throw std::invalid_argument("Selection no longer matches captured proposals.");
+        next_decisions[track][proposal] = {action, manual_value};
+        affected_tracks.insert(track);
+    }
+
+    for (const auto track : affected_tracks) {
+        auto& entry = next_entries[track];
+        verify_snapshot(entry);
+        const auto current = entry.handle->get_info_ref();
+        const auto original = metadata_from_file_info(current->info());
+        auto staged = djmeta::project_review_decisions(
+            original, state.analyses[track], next_decisions[track]);
+        entry.staged = std::move(staged.document);
+        entry.input.semantic_proposals_pending = staged.unresolved_semantic > 0;
+        entry.input.raw_relative_path.clear();
+        // Any decision invalidates prior filesystem/CUE preflight, even if a
+        // user picks the original value. No file or tag writer is invoked.
+        entry.input.filesystem_target_checked = false;
+        entry.input.cue_dependencies_checked = false;
+        if (entry.input.physical_source_qualified) {
+            entry.input.raw_relative_path = evaluate_titleformat_against_canonical(
+                entry.handle->get_location(), current->info(),
+                entry.staged, entry.route_expression);
+        }
+    }
+    // Transactional whole-batch stale-input gate before publishing preview.
+    for (const auto& entry : next_entries) verify_snapshot(entry);
+
+    state.entries = std::move(next_entries);
+    state.review_decisions = std::move(next_decisions);
+    refresh_review_summaries(state);
+    update_table(state);
+    update_master_table(state);
+    update_metadata_table(state);
+    if (action == djmeta::ReviewAction::ManualValue)
+        SetDlgItemTextW(dialog, IDC_METADATA_MANUAL_INPUT, L"");
 }
 
 void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
@@ -597,6 +779,7 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
         verify_snapshot(entry);
         entry.input.profile = choice.display_name;
         entry.input.destination_root = choice.destination_root;
+        entry.route_expression = choice.titleformat_expression;
         entry.input.raw_relative_path.clear();
         entry.input.filesystem_target_checked = false;
         entry.input.cue_dependencies_checked = false;
@@ -648,6 +831,7 @@ std::vector<PreviewEntry> capture_preview(
         entry.input.physical_id = handle->get_path();
         entry.input.profile = choice.display_name;
         entry.input.destination_root = choice.destination_root;
+        entry.route_expression = choice.titleformat_expression;
         entry.input.semantic_proposals_pending = staged.unresolved_proposals > 0;
         entry.input.physical_source_qualified =
             handle->get_subsong_index() == 0 &&
@@ -679,10 +863,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         state->metadata_track_list = GetDlgItem(dialog, IDC_METADATA_TRACK_LIST);
         state->metadata_filter = GetDlgItem(dialog, IDC_METADATA_FILTER);
         state->metadata_track_filter = GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER);
+        state->metadata_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
         state->tabs = GetDlgItem(dialog, IDC_BATCH_TABS);
         if (!state->list || !state->metadata_list || !state->metadata_track_list ||
             !state->metadata_filter || !state->metadata_track_filter ||
-            !state->tabs) return FALSE;
+            !state->metadata_scope || !state->tabs) return FALSE;
         for (const wchar_t* name : {L"Metadata changes", L"File locations"}) {
             TCITEMW tab{};
             tab.mask = TCIF_TEXT;
@@ -700,10 +885,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         ListView_SetExtendedListViewStyle(state->metadata_list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP |
             LVS_EX_HEADERDRAGDROP);
-        add_column(state->metadata_list, 0, L"Field", 88);
-        add_column(state->metadata_list, 1, L"Original", 120);
-        add_column(state->metadata_list, 2, L"Proposed", 120);
-        add_column(state->metadata_list, 3, L"Safety", 65);
+        add_column(state->metadata_list, 0, L"Field", 78);
+        add_column(state->metadata_list, 1, L"Original", 95);
+        add_column(state->metadata_list, 2, L"Proposed", 95);
+        add_column(state->metadata_list, 3, L"Safety", 57);
+        add_column(state->metadata_list, 4, L"Decision", 68);
         for (const wchar_t* focus : {L"Music tags", L"Extended tags", L"All fields"})
             SendDlgItemMessageW(dialog, IDC_METADATA_FILTER, CB_ADDSTRING,
                 0, reinterpret_cast<LPARAM>(focus));
@@ -712,6 +898,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             SendDlgItemMessageW(dialog, IDC_METADATA_TRACK_FILTER, CB_ADDSTRING,
                 0, reinterpret_cast<LPARAM>(status));
         SendDlgItemMessageW(dialog, IDC_METADATA_TRACK_FILTER, CB_SETCURSEL, 0, 0);
+        for (const wchar_t* scope : {L"Selected changes", L"Selected tracks", L"All tracks"})
+            SendDlgItemMessageW(dialog, IDC_METADATA_REVIEW_SCOPE, CB_ADDSTRING,
+                0, reinterpret_cast<LPARAM>(scope));
+        SendDlgItemMessageW(dialog, IDC_METADATA_REVIEW_SCOPE, CB_SETCURSEL, 0, 0);
+        SendDlgItemMessageW(dialog, IDC_METADATA_MANUAL_INPUT, EM_LIMITTEXT, 16384, 0);
 
         ListView_SetExtendedListViewStyle(state->list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
@@ -820,14 +1011,10 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
             header->code == LVN_ITEMCHANGED) {
             const auto* changed = reinterpret_cast<const NMLISTVIEW*>(lp);
-            if (!state->updating_track_selection && changed->iItem >= 0 &&
-                (changed->uNewState & LVIS_SELECTED) != 0 &&
-                (changed->uOldState & LVIS_SELECTED) == 0) {
-                const auto row = static_cast<std::size_t>(changed->iItem);
-                if (row < state->track_view_order.size()) {
-                    state->selected_track_index = state->track_view_order[row];
-                    update_metadata_table(*state);
-                }
+            if (const auto track = native_selected_track_change(
+                    *changed, state->track_view_order, state->updating_track_selection)) {
+                state->selected_track_index = *track;
+                update_metadata_table(*state);
             }
             return TRUE;
         }
@@ -856,10 +1043,14 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                     const auto index = state->metadata_view_order[row];
                     if (index < state->focused_metadata_rows.size()) {
                         const auto& entry = state->focused_metadata_rows[index];
+                        std::string manual_info;
+                        if (const auto* decision = decision_for_row(*state, entry);
+                            decision && decision->action == djmeta::ReviewAction::ManualValue)
+                            manual_info = "\nManual staged value: " + decision->manual_value;
                         const auto label = from_utf8(
                             "Rules: " + entry.rule_ids + "\nWhy: " +
                             entry.rationales + "\nOriginal: " + entry.original +
-                            "\nProposed: " + entry.proposed);
+                            "\nRule proposal: " + entry.proposed + manual_info);
                         lstrcpynW(tip->pszText, label.c_str(), tip->cchTextMax);
                     }
                 }
@@ -869,7 +1060,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         if (header && header->idFrom == IDC_METADATA_LIST &&
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
-            if (click->iSubItem >= 0 && click->iSubItem < 4) {
+            if (click->iSubItem >= 0 && click->iSubItem < 5) {
                 if (click->iSubItem == state->metadata_sort_column)
                     state->metadata_sort_descending = !state->metadata_sort_descending;
                 else {
@@ -953,8 +1144,23 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
 
     if (message != WM_COMMAND) return FALSE;
     const int id = LOWORD(wp);
+    const auto native_command = native_preview_command(message, wp);
     try {
-        if (id == IDC_METADATA_TRACK_FILTER && HIWORD(wp) == CBN_SELCHANGE) {
+        if (native_command == PreviewCommand::Accept ||
+            native_command == PreviewCommand::Reject ||
+            native_command == PreviewCommand::Reset ||
+            native_command == PreviewCommand::ManualValue) {
+            const auto action = native_command == PreviewCommand::Accept
+                ? djmeta::ReviewAction::Accept
+                : native_command == PreviewCommand::Reject
+                ? djmeta::ReviewAction::Reject
+                : native_command == PreviewCommand::Reset
+                ? djmeta::ReviewAction::Pending
+                : djmeta::ReviewAction::ManualValue;
+            apply_review_action(dialog, *state, action);
+            return TRUE;
+        }
+        if (native_command == PreviewCommand::TrackFilterChanged) {
             const auto choice = SendDlgItemMessageW(
                 dialog, IDC_METADATA_TRACK_FILTER, CB_GETCURSEL, 0, 0);
             state->track_discovery = choice == 1 ? djmeta::TrackDiscovery::Changed :
@@ -964,7 +1170,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             update_metadata_table(*state);
             return TRUE;
         }
-        if (id == IDC_METADATA_FILTER && HIWORD(wp) == CBN_SELCHANGE) {
+        if (native_command == PreviewCommand::FocusFilterChanged) {
             const auto choice = SendDlgItemMessageW(
                 dialog, IDC_METADATA_FILTER, CB_GETCURSEL, 0, 0);
             state->metadata_focus = choice == 1 ? djmeta::MetadataFocus::Extended :
@@ -1013,8 +1219,9 @@ void show_batch_preview_dialog(
         state.current_choice = initial_choice;
         state.entries = capture_preview(handles, initial_choice, state.analyses);
         state.metadata_rows = djmeta::describe_metadata_diffs(state.analyses);
-        state.track_summaries = djmeta::summarize_track_changes(
-            state.entries.size(), state.metadata_rows);
+        for (const auto& analysis : state.analyses)
+            state.review_decisions.emplace_back(analysis.proposals.size());
+        refresh_review_summaries(state);
         for (const auto& item : state.entries)
             state.source_labels.push_back(item.input.source_path);
         update_table(state);

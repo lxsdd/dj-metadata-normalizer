@@ -45,12 +45,13 @@ std::vector<MetadataDiffRow> describe_metadata_diffs(
     const std::vector<AnalysisResult>& analyses) {
     std::vector<MetadataDiffRow> rows;
     for (std::size_t i=0; i<analyses.size(); ++i) {
-        for (const Proposal& proposal : analyses[i].proposals) {
+        for (std::size_t j = 0; j < analyses[i].proposals.size(); ++j) {
+            const Proposal& proposal = analyses[i].proposals[j];
             if (proposal.original_value == proposal.proposed_value) continue;
             rows.push_back({
                 i, proposal.field_index, proposal.value_index,
                 proposal.field, proposal.original_value, proposal.proposed_value,
-                proposal.safety, join(proposal.rule_ids), join(proposal.rationales)
+                proposal.safety, join(proposal.rule_ids), join(proposal.rationales), j
             });
         }
     }

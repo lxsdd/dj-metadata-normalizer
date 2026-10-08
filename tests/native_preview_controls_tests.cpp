@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <cwchar>
 #include <iostream>
+#include <vector>
+#include <utility>
 
 namespace {
 void check(bool value, const char* message) {
@@ -13,7 +15,28 @@ void check(bool value, const char* message) {
         std::exit(1);
     }
 }
-INT_PTR CALLBACK test_dialog_proc(HWND, UINT, WPARAM, LPARAM) {
+djmeta_foobar::PreviewCommand last_command = djmeta_foobar::PreviewCommand::None;
+int command_notifications = 0;
+std::vector<std::size_t> active_track_order;
+std::size_t notified_track_identity = static_cast<std::size_t>(-1);
+bool rebuilding_master = false;
+INT_PTR CALLBACK test_dialog_proc(HWND, UINT message, WPARAM wp, LPARAM lp) {
+    if (message == WM_NOTIFY) {
+        const auto* hdr = reinterpret_cast<const NMHDR*>(lp);
+        if (hdr && hdr->idFrom == IDC_METADATA_TRACK_LIST &&
+            hdr->code == LVN_ITEMCHANGED) {
+            const auto* change = reinterpret_cast<const NMLISTVIEW*>(lp);
+            if (const auto track = djmeta_foobar::native_selected_track_change(
+                    *change, active_track_order, rebuilding_master))
+                notified_track_identity = *track;
+        }
+    }
+    const auto command = djmeta_foobar::native_preview_command(message, wp);
+    if (command != djmeta_foobar::PreviewCommand::None) {
+        last_command = command;
+        ++command_notifications;
+        return TRUE;
+    }
     return FALSE;
 }
 bool centers_match(HWND dialog, int label_id, int control_id) {
@@ -68,6 +91,38 @@ int main() {
     check(std::wcscmp(value, L"My DJ profile") == 0,
           "custom profile text survives in the actual control");
 
+    HWND review_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
+    HWND manual = GetDlgItem(dialog, IDC_METADATA_MANUAL_INPUT);
+    check(review_scope && manual &&
+          (static_cast<DWORD>(GetWindowLongPtrW(review_scope, GWL_STYLE)) & 0x3u) ==
+              CBS_DROPDOWNLIST,
+          "review scope is the real non-editable Windows selection control");
+    check(SetWindowTextW(manual, L"Custom review value") != FALSE,
+          "manual value control accepts editor text");
+    wchar_t manual_text[128]{};
+    GetWindowTextW(manual, manual_text, 128);
+    check(std::wcscmp(manual_text, L"Custom review value") == 0,
+          "manual value roundtrip uses the actual Win32 control");
+    RECT client{};
+    GetClientRect(dialog, &client);
+    for (int id : {IDC_METADATA_ACCEPT, IDC_METADATA_REJECT,
+                   IDC_METADATA_RESET, IDC_METADATA_USE_VALUE}) {
+        HWND button = GetDlgItem(dialog, id);
+        check(button != nullptr, "production review action exists");
+        RECT bounds{};
+        GetWindowRect(button, &bounds);
+        MapWindowPoints(HWND_DESKTOP, dialog,
+                        reinterpret_cast<POINT*>(&bounds), 2);
+        const bool inside = bounds.left >= 0 && bounds.right <= client.right &&
+                            bounds.top >= 0 && bounds.bottom <= client.bottom;
+        if (!inside)
+            std::cerr << "Review action geometry: id=" << id
+                      << " x=" << bounds.left << ".." << bounds.right
+                      << " y=" << bounds.top << ".." << bounds.bottom
+                      << " client=" << client.right << "x" << client.bottom << "\n";
+        check(inside, "review actions fit inside minimum-sized native dialog");
+    }
+
     for (int id : {IDC_METADATA_TRACK_LIST, IDC_METADATA_LIST}) {
         HWND list = GetDlgItem(dialog, id);
         check(list != nullptr, "actual master/detail list control present");
@@ -76,10 +131,72 @@ int main() {
               (flags & LVS_OWNERDATA) != 0,
               "master/detail controls support virtualized report view");
     }
+    // Send genuine BN_CLICKED notifications from the production buttons
+    // through the same decoder used by the real foobar dialog procedure.
+    const struct {int id; djmeta_foobar::PreviewCommand expected;} buttons[] = {
+        {IDC_METADATA_ACCEPT, djmeta_foobar::PreviewCommand::Accept},
+        {IDC_METADATA_REJECT, djmeta_foobar::PreviewCommand::Reject},
+        {IDC_METADATA_RESET, djmeta_foobar::PreviewCommand::Reset},
+        {IDC_METADATA_USE_VALUE, djmeta_foobar::PreviewCommand::ManualValue}
+    };
+    for (const auto& button : buttons) {
+        const int before = command_notifications;
+        SendMessageW(dialog, WM_COMMAND, MAKEWPARAM(button.id, BN_CLICKED),
+                     reinterpret_cast<LPARAM>(GetDlgItem(dialog, button.id)));
+        check(command_notifications == before + 1 && last_command == button.expected,
+              "production review command routes to the intended action");
+    }
     HWND track_filter = GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER);
     check(track_filter != nullptr &&
           (static_cast<DWORD>(GetWindowLongPtrW(track_filter, GWL_STYLE)) & 0x3u) == CBS_DROPDOWNLIST,
           "real native status filter is a non-editable combo");
+    for (const auto& filter : {
+        std::pair{IDC_METADATA_TRACK_FILTER, djmeta_foobar::PreviewCommand::TrackFilterChanged},
+        std::pair{IDC_METADATA_FILTER, djmeta_foobar::PreviewCommand::FocusFilterChanged}
+    }) {
+        SendMessageW(dialog, WM_COMMAND, MAKEWPARAM(filter.first, CBN_SELCHANGE),
+                     reinterpret_cast<LPARAM>(GetDlgItem(dialog, filter.first)));
+        check(last_command == filter.second, "production combo selection notification");
+    }
+    // The actual owner-data ListView must retain source IDs across a re-sort:
+    // the second view has different row positions for both selected tracks.
+    HWND master = GetDlgItem(dialog, IDC_METADATA_TRACK_LIST);
+    check(ListView_SetItemCountEx(master, 3, 0) != FALSE,
+          "production virtual master accepts three rows");
+    ListView_SetItemState(master, 0, LVIS_SELECTED, LVIS_SELECTED);
+    ListView_SetItemState(master, 2, LVIS_SELECTED, LVIS_SELECTED);
+    const std::vector<std::size_t> initial_order{13, 5, 9};
+    active_track_order = initial_order;
+    // The ListView fires real LVN_ITEMCHANGED notifications as its selection
+    // changes. The dialog callback uses the production identity resolver.
+    ListView_SetItemState(master, 2, 0, LVIS_SELECTED);
+    ListView_SetItemState(master, 2, LVIS_SELECTED, LVIS_SELECTED);
+    check(notified_track_identity == 9,
+          "real LVN_ITEMCHANGED notification identifies source 9");
+    const auto selected = djmeta_foobar::selected_native_view_ids(master, initial_order);
+    check(selected == std::vector<std::size_t>({13, 9}),
+          "multiple real listview selections resolve to stable track identities");
+    const std::vector<std::size_t> sorted_order{9, 13, 5};
+    active_track_order = sorted_order;
+    rebuilding_master = true;
+    djmeta_foobar::restore_native_view_selection(master, sorted_order, selected, 9);
+    rebuilding_master = false;
+    check(djmeta_foobar::selected_native_view_ids(master, sorted_order) ==
+          std::vector<std::size_t>({9, 13}),
+          "sort preserves all selected track identities in owner-data listview");
+    check((ListView_GetItemState(master, 0, LVIS_FOCUSED) & LVIS_FOCUSED) != 0,
+          "focused track survives independently from sorted row identity");
+    ListView_SetItemState(master, 2, LVIS_SELECTED, LVIS_SELECTED);
+    check(notified_track_identity == 5,
+          "real LVN_ITEMCHANGED after sorting resolves new source, not stale view row");
+    HWND detail = GetDlgItem(dialog, IDC_METADATA_LIST);
+    check(ListView_SetItemCountEx(detail, 3, 0) != FALSE,
+          "production virtual proposal grid accepts three rows");
+    ListView_SetItemState(detail, 1, LVIS_SELECTED, LVIS_SELECTED);
+    check(djmeta_foobar::selected_native_view_ids(detail, {4, 11, 2}) ==
+          std::vector<std::size_t>({11}),
+          "detail proposal selection resolves sorted proposal identity");
+
     djmeta_foobar::align_native_preview_form(dialog);
     const int rows[][2] = {
         {IDC_METADATA_FILTER_LABEL, IDC_METADATA_FILTER},
@@ -96,7 +213,8 @@ int main() {
           "preview actions exist in production resource");
 
     DestroyWindow(dialog);
-    std::cout << "PASS: real Win32 preview resource, editable profile, "
+    std::cout << "PASS: Win32 review/filters command decoding, multi-select identity, manual input, action bounds; "
+                 "native preview resource, editable profile, "
                  "virtual master/detail controls and shared label alignment\n";
     return 0;
 }

@@ -20,6 +20,7 @@ struct MetadataDiffRow {
     SafetyClass safety = SafetyClass::Review;
     std::string rule_ids;
     std::string rationales;
+    std::size_t proposal_index = 0; // stable index within analysis.proposals
 };
 
 std::vector<MetadataDiffRow> describe_metadata_diffs(
