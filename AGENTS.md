@@ -19,6 +19,27 @@ This repository is the canonical source of truth for DJ Metadata Normalizer.
 - New semantic rules start as REVIEW unless specifically qualified otherwise.
 - SAFE is reserved for transformations proven deterministic and non-semantic.
 
+## Shared UI/UX and rules across products
+
+- Apply `lxsdd/dev-infrastructure/STANDARDS/SHARED-DESKTOP-UX.md` (v1)
+  and `STANDARDS/UI-RUNTIME-QUALIFICATION.md` to every foobar window.
+  Preserve English-only built-in foobar UI, source/target identity, proper
+  DPI/baselines and native profile layout persistence.
+- Primary metadata review uses **one row per selected physical track**,
+  with a detail surface showing original/proposed values, rule IDs and
+  explicit SAFE/CONFIDENT/REVIEW status. Discogs/freeform text remains
+  accessible under Extended/All, never erased by a display filter.
+- Share ONE versioned normalizer core and ruleset with DJ Library via
+  its existing native ABI. Do not push a new ruleset revision without
+  consumer compatibility checks against DJ Library and the read-only
+  bridge schema; neither other components' private editing policies nor
+  unrelated BPM/scanner heuristics may be silently rewritten.
+- Native Windows/foobar and WPF controls may differ in implementation;
+  user-facing sorting, full-row selection, contextual detail, tooltips,
+  persistence, form alignment and confirmation scopes must agree.
+- Keep every functional preview read-only until physical/virtual, CUE,
+  target collision and stale-snapshot authorization gates pass.
+
 ## Engineering
 
 - C++20 core, deterministic behavior on Win32/x64 and CI hosts.
