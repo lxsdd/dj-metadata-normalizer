@@ -198,7 +198,9 @@ std::string status_text(const djmeta::BatchPreviewRow& row) {
         if (issue == "DUPLICATE_RAW_TARGET") return "Duplicate raw target";
         if (issue == "UNAPPROVED_METADATA_PROPOSALS") return "Metadata: REVIEW";
     }
-    return "CUE / filesystem unchecked";
+    // Global limitations are explained in the footer rather than shown
+    // repeatedly as a warning in every otherwise unremarkable row.
+    return "";
 }
 
 // Strip foobar's file:// locator only for presentation, never for identity.
@@ -217,7 +219,11 @@ std::wstring cell_text(PreviewState& state, std::size_t row, int column) {
     switch (column) {
     case 0: return from_utf8(display_file_path(entry.input.source_path));
     case 1: return from_utf8(entry.input.profile);
-    case 2: return from_utf8(summary.raw_destination);
+    case 2: {
+        std::string display = summary.raw_destination;
+        for (char& ch : display) if (ch == '/') ch = '\\\\';
+        return from_utf8(display);
+    }
     case 3: return from_utf8(status_text(summary));
     default: return {};
     }
@@ -602,7 +608,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             LVS_EX_HEADERDRAGDROP);
         add_column(state->list, 0, L"Source file", 170);
         add_column(state->list, 1, L"Profile", 82);
-        add_column(state->list, 2, L"Proposed raw target", 275);
+        add_column(state->list, 2, L"Proposed path (unverified)", 275);
         add_column(state->list, 3, L"Status", 160);
         state->layout = load_batch_table_layout();
         apply_column_layout(*state);
