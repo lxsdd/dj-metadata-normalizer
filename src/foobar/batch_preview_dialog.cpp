@@ -441,12 +441,14 @@ void capture_resize_layout(PreviewState& state) {
                         reinterpret_cast<POINT*>(&layout.original), 2);
         const int id = GetDlgCtrlID(control);
         layout.stretch_width =
-            id == IDC_BATCH_LIST || id == IDC_BATCH_PROFILE_NAME ||
+            id == IDC_BATCH_LIST || id == IDC_METADATA_LIST ||
+            id == IDC_BATCH_TABS || id == IDC_BATCH_PROFILE_NAME ||
             id == IDC_BATCH_DESTINATION || id == IDC_BATCH_PATTERN ||
             (id == -1 && layout.original.right >
              current.initial_client_width - 24);
-        layout.stretch_height = id == IDC_BATCH_LIST;
-        layout.shift_down = id != IDC_BATCH_LIST &&
+        layout.stretch_height = id == IDC_BATCH_LIST || id == IDC_METADATA_LIST;
+        layout.shift_down = id != IDC_BATCH_LIST && id != IDC_METADATA_LIST &&
+            id != IDC_BATCH_TABS &&
             layout.original.top >= current.initial_list_bottom;
         layout.shift_right = id == IDC_BATCH_APPLY_SELECTED ||
                              id == IDC_BATCH_APPLY_ALL || id == IDCANCEL;
@@ -664,6 +666,35 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
 
     if (message == WM_NOTIFY) {
         const auto* header = reinterpret_cast<const NMHDR*>(lp);
+        if (header && header->idFrom == IDC_BATCH_TABS &&
+            header->code == TCN_SELCHANGE) {
+            show_preview_page(dialog, *state, TabCtrl_GetCurSel(state->tabs) == 0);
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_LIST &&
+            header->code == LVN_COLUMNCLICK) {
+            const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
+            if (click->iSubItem >= 0 && click->iSubItem < 6) {
+                if (click->iSubItem == state->metadata_sort_column)
+                    state->metadata_sort_descending = !state->metadata_sort_descending;
+                else {
+                    state->metadata_sort_column = click->iSubItem;
+                    state->metadata_sort_descending = false;
+                }
+                update_metadata_table(*state);
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_LIST &&
+            header->code == LVN_GETDISPINFOW) {
+            auto* info = reinterpret_cast<NMLVDISPINFOW*>(lp);
+            if ((info->item.mask & LVIF_TEXT) != 0 && info->item.iItem >= 0) {
+                state->cell_buffer = metadata_cell_text(*state,
+                    static_cast<std::size_t>(info->item.iItem), info->item.iSubItem);
+                info->item.pszText = state->cell_buffer.data();
+            }
+            return TRUE;
+        }
         if (header && header->idFrom == IDC_BATCH_LIST &&
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
