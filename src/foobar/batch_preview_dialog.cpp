@@ -454,6 +454,22 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     if (message == WM_NOTIFY) {
         const auto* header = reinterpret_cast<const NMHDR*>(lp);
         if (header && header->idFrom == IDC_BATCH_LIST &&
+            header->code == LVN_COLUMNCLICK) {
+            const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
+            if (click->iSubItem >= 0 &&
+                click->iSubItem < djmeta::kBatchPreviewColumnCount) {
+                if (state->layout.sort_column == click->iSubItem)
+                    state->layout.sort_descending = !state->layout.sort_descending;
+                else {
+                    state->layout.sort_column = click->iSubItem;
+                    state->layout.sort_descending = false;
+                }
+                update_table(*state); // preserves selected underlying row IDs
+                show_sort_arrow(*state);
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_BATCH_LIST &&
             header->code == LVN_GETDISPINFOW) {
             auto* info = reinterpret_cast<NMLVDISPINFOW*>(lp);
             if ((info->item.mask & LVIF_TEXT) != 0 && info->item.iItem >= 0) {
@@ -467,6 +483,23 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             }
             return TRUE;
         }
+    }
+
+    if (message == WM_CONTEXTMENU &&
+        reinterpret_cast<HWND>(wp) == ListView_GetHeader(state->list)) {
+        show_column_menu(dialog, *state, lp);
+        return TRUE;
+    }
+    if (message == WM_DESTROY) {
+        // UI layout is independent of preview Cancel/Close. Save only display
+        // preferences, never route edits, media metadata or file operations.
+        try {
+            capture_column_layout(*state);
+            store_batch_table_layout(state->layout);
+        } catch (const std::exception&) {
+            // Invalid profile display state is non-critical; retain defaults.
+        }
+        return FALSE;
     }
 
     if (message == 0x02E0u /* WM_DPICHANGED */) {
