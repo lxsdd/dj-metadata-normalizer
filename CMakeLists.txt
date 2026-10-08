@@ -13,6 +13,7 @@ add_library(djmeta_core STATIC
     src/core/table_layout.cpp
     src/core/metadata_diff.cpp
     src/core/track_review.cpp
+    src/core/review_decisions.cpp
     src/core/rule_loader.cpp
     src/core/analysis_json.cpp
 )
@@ -191,7 +192,17 @@ if(WIN32)
     endif()
 endif()
 
+add_executable(djmeta_review_decisions_tests tests/review_decisions_tests.cpp)
+target_link_libraries(djmeta_review_decisions_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_review_decisions_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_review_decisions_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_review_decisions_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_review_decisions_tests COMMAND djmeta_review_decisions_tests)
 if(WIN32)
     add_test(NAME djmeta_native_preview_controls_tests
              COMMAND djmeta_native_preview_controls_tests)
