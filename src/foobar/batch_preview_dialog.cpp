@@ -268,6 +268,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     if (message == WM_INITDIALOG) {
         auto* state = reinterpret_cast<PreviewState*>(lp);
         SetWindowLongPtrW(dialog, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+        try {
         state->dark.AddDialogWithControls(dialog);
         state->list = GetDlgItem(dialog, IDC_BATCH_LIST);
         if (!state->list) return FALSE;
@@ -293,6 +294,12 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                         from_utf8(state->current_choice.titleformat_expression).c_str());
         update_table(*state);
         return TRUE;
+        } catch (const std::exception&) {
+            MessageBoxW(dialog, L"Unable to initialize the batch preview table.",
+                        L"Prepare Tracks", MB_OK | MB_ICONERROR);
+            EndDialog(dialog, IDCANCEL);
+            return TRUE;
+        }
     }
 
     auto* state = reinterpret_cast<PreviewState*>(
