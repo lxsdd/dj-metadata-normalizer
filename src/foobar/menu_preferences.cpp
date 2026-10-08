@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#include <SDK/coreDarkMode.h>
+
 #include "menu_settings.h"
 #include "resource.h"
 
