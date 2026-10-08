@@ -108,10 +108,21 @@ for label, source, token in [
     ("native prefs dialog", resources, "IDD_MENU_PREFERENCES DIALOGEX"),
     ("unified single window", prepare_dialog, "show_batch_preview_dialog(handles, choice)"),
     ("real metadata proposals", batch_table_dialog, "djmeta::describe_metadata_diffs"),
+    ("one row per physical selected track", batch_table_dialog, "djmeta::summarize_track_changes"),
+    ("track list as production widget", batch_table_dialog, "IDC_METADATA_TRACK_LIST"),
+    ("track master selection", batch_table_dialog, "LVN_ITEMCHANGED"),
+    ("selection resolves source identity", batch_table_dialog, "state->track_view_order[row]"),
+    ("track-specific detail", batch_table_dialog, "djmeta::selected_track_diffs"),
+    ("music versus extended focus", batch_table_dialog, "MetadataFocus::Music"),
+    ("extended/custom fields reachable", batch_table_dialog, "MetadataFocus::All"),
+    ("track list sorted independently", batch_table_dialog, "sort_track_summaries"),
+    ("actual tag diff provenance tooltip", batch_table_dialog, "LVN_GETINFOTIPW"),
+    ("metadata routing fields hidden", batch_table_dialog, "IDC_BATCH_ROUTE_LABEL"),
+
     ("metadata and file tab control", batch_table_dialog, "TCN_SELCHANGE"),
     ("metadata diff view", batch_table_dialog, "IDC_METADATA_LIST"),
     ("metadata safety", batch_table_dialog, "item.safety"),
-    ("metadata rule provenance", batch_table_dialog, "item.rule_ids"),
+    ("metadata rule provenance in production tooltip", batch_table_dialog, "entry.rule_ids"),
     ("metadata sort", batch_table_dialog, "sort_metadata_diff_rows"),
     ("source path presentation only", batch_table_dialog, "display_file_path"),
     ("unified tabs resource", resources, "IDC_BATCH_TABS"),
@@ -167,6 +178,10 @@ for ui_file in ("preview.cpp", "routing_preview.cpp", "prepare_dialog.cpp",
             raise SystemExit("STATIC FOOBAR AUDIT FAIL: non-English UI in " +
                              ui_file + ": " + forbidden_ui)
 
+if "IDC_METADATA_TRACK_LIST" not in resources or "IDC_METADATA_FILTER" not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: track master/metadata filter missing from production resources")
+if "ShowWindow(state.metadata_track_list" not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: master/detail tab visibility not wired")
 if "IDD_PREPARE_TRACKS DIALOGEX" in resources:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: obsolete two-dialog wizard remains")
 if "contextmenu_item::FORCE_OFF" in route_menu:
@@ -191,6 +206,7 @@ for path in [
     r"src\foobar\batch_preview_dialog.cpp",
     r"src\core\batch_preview.cpp",
     r"src\core\table_layout.cpp",
+    r"src\core\track_review.cpp",
     r"src\foobar\batch_table_settings.cpp",
     r"src\foobar\prepare_dialog.cpp",
     r"src\foobar\menu_settings.cpp",
