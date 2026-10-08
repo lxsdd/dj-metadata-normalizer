@@ -30,6 +30,8 @@ StagedMetadata stage_safe_only(
         if (is_protected_cue_metadata(source.name))
             throw std::invalid_argument("embedded CUE must use a dedicated editor");
         if (proposal.safety == SafetyClass::Safe) {
+            if (proposal.proposed_value.empty() && !proposal.original_value.empty())
+                throw std::invalid_argument("SAFE proposal would implicitly erase a tag value");
             if (!safe_scalar_metadata_field(source.name, proposal.original_value) ||
                 !safe_scalar_metadata_field(source.name, proposal.proposed_value))
                 throw std::invalid_argument("unsafe automatic edit of structural metadata");
