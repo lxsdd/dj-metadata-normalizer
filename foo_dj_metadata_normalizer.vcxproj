@@ -50,7 +50,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>shell32.lib;ole32.lib;user32.lib;$(FoobarSdkRoot)\foobar2000\shared\shared-$(Platform).lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>shell32.lib;ole32.lib;user32.lib;comctl32.lib;$(FoobarSdkRoot)\foobar2000\shared\shared-$(Platform).lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <ResourceCompile>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\rules;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -70,6 +70,7 @@
     <ClCompile Include="src\foobar\titleformat_planner.cpp" />
     <ClCompile Include="src\foobar\routing_preview.cpp" />
     <ClCompile Include="src\foobar\prepare_dialog.cpp" />
+    <ClCompile Include="src\foobar\batch_preview_dialog.cpp" />
     <ClCompile Include="src\foobar\menu_settings.cpp" />
     <ClCompile Include="src\foobar\menu_preferences.cpp" />
   </ItemGroup>
@@ -90,6 +91,7 @@
     <ClInclude Include="src\foobar\legacy_routing_profiles.h" />
     <ClInclude Include="src\foobar\routing_preview.h" />
     <ClInclude Include="src\foobar\prepare_dialog.h" />
+    <ClInclude Include="src\foobar\batch_preview_dialog.h" />
     <ClInclude Include="src\foobar\menu_settings.h" />
   </ItemGroup>
   <ItemGroup>
