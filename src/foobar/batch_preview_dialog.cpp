@@ -49,6 +49,7 @@ struct PreviewState {
     HWND dialog = nullptr;
     int initial_client_width = 0;
     int initial_client_height = 0;
+    int initial_list_bottom = 0;
     int initial_window_width = 0;
     int initial_window_height = 0;
     std::vector<ResizableControl> resize_controls;
@@ -350,6 +351,7 @@ void capture_resize_layout(PreviewState& state) {
     GetWindowRect(state.list, &list_rect);
     MapWindowPoints(HWND_DESKTOP, dialog,
                     reinterpret_cast<POINT*>(&list_rect), 2);
+    state.initial_list_bottom = list_rect.bottom;
     state.initial_client_width = client.right;
     state.initial_client_height = client.bottom;
     state.initial_window_width = window_rect.right - window_rect.left;
@@ -372,7 +374,7 @@ void capture_resize_layout(PreviewState& state) {
              current.initial_client_width - 24);
         layout.stretch_height = id == IDC_BATCH_LIST;
         layout.shift_down = id != IDC_BATCH_LIST &&
-            layout.original.top >= current.resize_controls.front().original.bottom;
+            layout.original.top >= current.initial_list_bottom;
         layout.shift_right = id == IDC_BATCH_APPLY_SELECTED ||
                              id == IDC_BATCH_APPLY_ALL || id == IDCANCEL;
         current.resize_controls.push_back(layout);
