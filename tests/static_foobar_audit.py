@@ -199,7 +199,7 @@ for label, source, token in [
     ("unverified CUE gate", batch_table_dialog, "entry.input.cue_dependencies_checked = false"),
     ("unverified destination gate", batch_table_dialog, "entry.input.filesystem_target_checked = false"),
     ("safe-only projection", route_preview, "djmeta::stage_safe_only"),
-    ("foobar titleformat projection", route_preview, "evaluate_titleformat_against_canonical"),
+    ("foobar titleformat projection", route_preview, "formatter.evaluate("),
     ("stale metadata guard", route_preview, "djmeta::fingerprint(latest)"),
     ("subsong physical guard", route_preview, "get_subsong_index() != 0"),
     ("raw target duplicate warning", route_preview, "raw_target_counts"),
@@ -347,7 +347,7 @@ for token in ('NMLVFINDITEMW', 'find_native_track_prefix(', 'LVFI_WRAP'):
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual resource-backed incremental search test missing " + token)
 if 'project_review_decisions(' not in batch_table_dialog or 'verify_snapshot(entry)' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual review projection lacks analysis/stale gate")
-if 'evaluate_titleformat_against_canonical(' not in batch_table_dialog or 'entry.route_expression' not in batch_table_dialog:
+if 'formatter.evaluate(' not in batch_table_dialog or 'entry.route_expression' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: reviewed stage does not reevaluate its own route expression")
 if 'LVNI_SELECTED' not in batch_table_dialog or 'diff.proposal_index' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: review action target does not preserve proposal index")
