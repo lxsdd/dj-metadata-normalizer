@@ -69,6 +69,24 @@ for token in [
     if token not in preview:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: stale-input preview guard missing " + token)
 
+host_probe = (foobar / "host_file_probe.cpp").read_text(encoding="utf-8")
+for token in (
+    "filesystem::g_get_canonical_path",
+    "filesystem::g_get_native_path",
+    "filesystem::g_get_stats2",
+    "FILE_READ_ATTRIBUTES",
+    "OPEN_EXISTING",
+    "GetFileInformationByHandle",
+    "FILE_SHARE_DELETE",
+):
+    if token not in host_probe:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing read-only host probe: " + token)
+for token in ("GENERIC_WRITE", "CREATE_ALWAYS", "CREATE_NEW", "TRUNCATE_EXISTING"):
+    if token in host_probe:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: mutating host probe: " + token)
+if "djmeta::qualify_physical_selection(evidence)" not in batch_rules_guard:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing physical-identity collision gate")
+
 planner = (foobar / "titleformat_planner.cpp").read_text(encoding="utf-8")
 for token in [
     "titleformat_compiler::get()",
