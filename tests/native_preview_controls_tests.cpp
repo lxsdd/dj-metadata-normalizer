@@ -90,9 +90,14 @@ int main() {
         GetWindowRect(button, &bounds);
         MapWindowPoints(HWND_DESKTOP, dialog,
                         reinterpret_cast<POINT*>(&bounds), 2);
-        check(bounds.left >= 0 && bounds.right <= client.right &&
-              bounds.top >= 0 && bounds.bottom <= client.bottom,
-              "review actions fit inside minimum-sized native dialog");
+        const bool inside = bounds.left >= 0 && bounds.right <= client.right &&
+                            bounds.top >= 0 && bounds.bottom <= client.bottom;
+        if (!inside)
+            std::cerr << "Review action geometry: id=" << id
+                      << " x=" << bounds.left << ".." << bounds.right
+                      << " y=" << bounds.top << ".." << bounds.bottom
+                      << " client=" << client.right << "x" << client.bottom << "\n";
+        check(inside, "review actions fit inside minimum-sized native dialog");
     }
 
     for (int id : {IDC_METADATA_TRACK_LIST, IDC_METADATA_LIST}) {
