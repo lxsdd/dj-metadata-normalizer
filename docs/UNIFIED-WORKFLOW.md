@@ -368,3 +368,19 @@ batches. Before enabling any writer, qualify latency, progress/cancellation
 and batching against representative 1/100/15,000-item selections. Use the
 SDK's available read-only batch-stats API where practical without replacing
 true physical identity evidence with a guessed path key.
+
+### Raw Title Formatting path safeguard
+
+Before foobar File Operations defines the final destination, the read-only
+portable preview now flags obvious unsafe **raw relative path** fragments with
+`UNSAFE_RAW_RELATIVE_TARGET`. The conservative detector rejects absolute or
+traversing paths, empty segments, Windows device aliases such as `CON.mp3`
+or `LPT1`, alternate-data-stream colons, control characters, malformed
+UTF-8 and invalid/trailing Windows filename characters. Case-preserving,
+non-ASCII ordinary names remain allowed.
+
+This deliberately does **not** reimplement foobar's target-name sanitization:
+foobar may legitimately repair a raw filename in its native File Operations
+dialog. Such paths remain REVIEW/unqualified until a read-only adapter can
+compare the **actual host-resolved post-sanitization destination** and its
+filesystem identity. The existing destination and CUE gates remain in force.
