@@ -64,8 +64,13 @@ The result is a **new immutable in-memory batch proposal**:
   are changed;
 - host-computed target paths, identity keys, target-presence guard and
   previously verified cue links are cleared;
-- related external-CUE and companion plans are invalidated even when a
-  multi-FILE CUE references other audio outside the selection;
+- **all external CUE plans in the current batch** are invalidated
+  conservatively after any route change: the current item model has only
+  one primary associated audio ID, while multi-FILE cues can refer to
+  several selected or unselected sources;
+- other companion plans are invalidated when their primary audio is
+  selected; full host dependency mapping remains a prerequisite before
+  enabling any file writes;
 - the original plan is never mutated.
 
 A new foobar Title Formatting evaluation, source/target existence scan,
