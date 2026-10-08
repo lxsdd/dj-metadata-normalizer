@@ -1,0 +1,139 @@
+{
+  "schema_version": 2,
+  "ruleset_id": "lxsdd.dj-metadata-normalizer.semantic-candidates",
+  "revision": "2026-10-08.candidate-1",
+  "rules": [
+    {
+      "id": "review.artist.alias-example",
+      "enabled": false,
+      "priority": 100,
+      "fields": [
+        "ARTIST"
+      ],
+      "match": {
+        "kind": "exact",
+        "value": "Example Artist Alias",
+        "case_sensitive": false
+      },
+      "transform": {
+        "kind": "replace_with",
+        "replacement": "Canonical Example Artist"
+      },
+      "safety": "REVIEW",
+      "source": {
+        "kind": "manual",
+        "rationale": "An illustrative exact ARTIST alias; replace with collection-specific confirmed mapping."
+      }
+    },
+    {
+      "id": "review.label.alias-example",
+      "enabled": false,
+      "priority": 110,
+      "fields": [
+        "LABEL"
+      ],
+      "match": {
+        "kind": "exact",
+        "value": "Example Label Records",
+        "case_sensitive": false
+      },
+      "transform": {
+        "kind": "replace_with",
+        "replacement": "Example Label"
+      },
+      "safety": "REVIEW",
+      "source": {
+        "kind": "manual",
+        "rationale": "An illustrative exact LABEL alias; requires source approval before enabling."
+      }
+    },
+    {
+      "id": "review.title.mix-example",
+      "enabled": false,
+      "priority": 120,
+      "fields": [
+        "TITLE"
+      ],
+      "match": {
+        "kind": "exact",
+        "value": "Example Track (Original Mix)",
+        "case_sensitive": false
+      },
+      "transform": {
+        "kind": "replace_with",
+        "replacement": "Example Track"
+      },
+      "safety": "REVIEW",
+      "source": {
+        "kind": "manual",
+        "rationale": "A TITLE/version split is not safe without separate VERSION write support; REVIEW only."
+      }
+    },
+    {
+      "id": "review.version.spelling-example",
+      "enabled": false,
+      "priority": 130,
+      "fields": [
+        "VERSION"
+      ],
+      "match": {
+        "kind": "exact",
+        "value": "Orig. Mix",
+        "case_sensitive": false
+      },
+      "transform": {
+        "kind": "replace_with",
+        "replacement": "Original Mix"
+      },
+      "safety": "REVIEW",
+      "source": {
+        "kind": "manual",
+        "rationale": "Illustrative VERSION spelling normalization; may change intended version identity."
+      }
+    },
+    {
+      "id": "review.genre.alias-example",
+      "enabled": false,
+      "priority": 140,
+      "fields": [
+        "GENRE"
+      ],
+      "match": {
+        "kind": "exact",
+        "value": "Example House Subgenre",
+        "case_sensitive": false
+      },
+      "transform": {
+        "kind": "replace_with",
+        "replacement": "House"
+      },
+      "safety": "REVIEW",
+      "source": {
+        "kind": "manual",
+        "rationale": "Broad genre mapping is subjective; REVIEW only."
+      }
+    },
+    {
+      "id": "review.artist.feat-example",
+      "enabled": false,
+      "priority": 150,
+      "fields": [
+        "ARTIST"
+      ],
+      "match": {
+        "kind": "exact",
+        "value": "Artist A feat. Artist B",
+        "case_sensitive": false
+      },
+      "transform": {
+        "kind": "replace_with",
+        "replacement": "Artist A; Artist B"
+      },
+      "safety": "REVIEW",
+      "source": {
+        "kind": "manual",
+        "rationale": "Never automatically turn textual collaboration into separate ID3 multivalue tags."
+      }
+    }
+  ]
+}
