@@ -28,6 +28,8 @@ struct FilePlanItem {
     std::string associated_audio_id;
 
     std::string metadata_fingerprint;
+    // Approved/selected proposal postimage, not merely raw input fingerprint.
+    std::string planned_metadata_fingerprint;
     std::string ruleset_revision;
     std::string routing_profile;
     std::string naming_expression;
