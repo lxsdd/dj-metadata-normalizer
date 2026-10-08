@@ -222,7 +222,20 @@ else()
     target_compile_options(djmeta_review_decisions_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+
+# Provider-independent online metadata candidate engine is read-only and
+# header-only in P0; the test exercises it without network or foobar SDK.
+add_executable(djmeta_online_match_tests tests/online_match_tests.cpp)
+target_include_directories(djmeta_online_match_tests PRIVATE include)
+target_compile_features(djmeta_online_match_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_online_match_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_online_match_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_online_match_tests COMMAND djmeta_online_match_tests)
 add_test(NAME djmeta_write_guard_tests COMMAND djmeta_write_guard_tests)
 add_test(NAME djmeta_physical_selection_tests COMMAND djmeta_physical_selection_tests)
 add_test(NAME djmeta_review_decisions_tests COMMAND djmeta_review_decisions_tests)
