@@ -90,7 +90,8 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
 
         for (t_size i = 0; i < handles.get_count(); ++i) {
             const metadb_handle_ptr& handle = handles[i];
-            const file_info& info = handle->get_info_ref()->info();
+            const auto info_container = handle->get_info_ref();
+            const file_info& info = info_container->info();
             const djmeta::MetadataDocument original = metadata_from_file_info(info);
             const auto analysis = djmeta::Engine{}.analyze(
                 original, ruleset.rules, ruleset.revision);
