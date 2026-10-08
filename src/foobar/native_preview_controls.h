@@ -89,6 +89,39 @@ inline void restore_native_view_selection(
     }
 }
 
+// Keep the two real master/detail ListViews balanced across a resize.
+// Rectangles use the dialog client coordinate system and remain separate
+// from review identity, normalization and write logic.
+struct ReviewSplitGeometry {
+    RECT master{};
+    RECT detail{};
+};
+inline ReviewSplitGeometry review_split_geometry(
+    RECT master, RECT detail, int width_delta, int height_delta) {
+    const int master_delta = width_delta / 2;
+    master.right += master_delta;
+    master.bottom += height_delta;
+    detail.left += master_delta;
+    detail.right += width_delta;
+    detail.bottom += height_delta;
+    return {master, detail};
+}
+
+inline bool apply_review_split_geometry(HWND master_list, HWND detail_list,
+                                        RECT original_master, RECT original_detail,
+                                        int width_delta, int height_delta) {
+    if (!IsWindow(master_list) || !IsWindow(detail_list)) return false;
+    const auto next = review_split_geometry(original_master, original_detail,
+                                             width_delta, height_delta);
+    const UINT flags = SWP_NOZORDER | SWP_NOACTIVATE;
+    return SetWindowPos(master_list, nullptr, next.master.left, next.master.top,
+                        next.master.right - next.master.left,
+                        next.master.bottom - next.master.top, flags) != FALSE &&
+           SetWindowPos(detail_list, nullptr, next.detail.left, next.detail.top,
+                        next.detail.right - next.detail.left,
+                        next.detail.bottom - next.detail.top, flags) != FALSE;
+}
+
 inline bool align_label_to_input(HWND dialog, int label_id, int input_id) {
     const HWND label = GetDlgItem(dialog, label_id);
     const HWND input = GetDlgItem(dialog, input_id);
