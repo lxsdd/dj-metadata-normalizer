@@ -65,8 +65,8 @@ void show_normalization_preview(const metadb_handle_list& handles) {
                 metadata_from_file_info(current_container->info());
             if (djmeta::fingerprint(current) != item.result.input_fingerprint) {
                 throw std::runtime_error(
-                    "Metadaten haben sich während der Analyse geändert. "
-                    "Die Vorschau wurde als veraltet verworfen; bitte erneut ausführen.");
+                    "Metadata changed during analysis. "
+                    "The preview is stale. Please run the analysis again.");
             }
         }
 
@@ -101,20 +101,20 @@ void show_normalization_preview(const metadb_handle_list& handles) {
                 detail += display_value(proposal.original_value);
                 detail += "\" -> \"";
                 detail += display_value(proposal.proposed_value);
-                detail += "\"\n  Regeln: ";
+                detail += "\"\n  Rules: ";
                 append_rules(detail, proposal.rule_ids);
                 detail += "\n";
             }
         }
 
         std::string message;
-        message += "Regelbestand: ";
+        message += "Ruleset: ";
         message += loaded.source_label;
         message += "\nRevision: ";
         message += ruleset.revision;
-        message += "\nAusgewählte Tracks: ";
+        message += "\nSelected tracks: ";
         message += std::to_string(handles.get_count());
-        message += "\nVorschläge: ";
+        message += "\nProposals: ";
         message += std::to_string(proposal_count);
         message += " (SAFE ";
         message += std::to_string(safe_count);
@@ -125,21 +125,21 @@ void show_normalization_preview(const metadb_handle_list& handles) {
         message += ")\n";
 
         if (proposal_count == 0) {
-            message += "\nKeine Normalisierungsvorschläge. Es wurde nichts verändert.";
+            message += "\nNo normalization proposals. Nothing was changed.";
         } else {
             message += detail;
             if (proposal_count > kDetailLimit) {
                 message += "\n... ";
                 message += std::to_string(proposal_count - kDetailLimit);
-                message += " weitere Vorschläge werden in dieser frühen Vorschau nicht angezeigt.";
+                message += " additional proposals are not displayed in this early preview.";
             }
-            message += "\n\nNur Vorschau: Es wurden keine Tags geschrieben.";
+            message += "\n\nPreview only: No tags were written.";
         }
 
         popup_message::g_show(message.c_str(), "DJ Metadata Normalizer");
     } catch (const std::exception& error) {
         std::string message =
-            "Die Normalisierungsvorschau konnte nicht erstellt werden. Es wurde nichts verändert.\n\n";
+            "Unable to create normalization preview. Nothing was changed.\n\n";
         message += error.what();
         popup_message::g_show(message.c_str(), "DJ Metadata Normalizer");
     }

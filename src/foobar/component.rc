@@ -1,3 +1,62 @@
 #include "resource.h"
+#include <windows.h>
+#include <commctrl.h>
 
 IDR_DEFAULT_RULESET RCDATA "../../rules/default-rules.json"
+
+IDD_PREPARE_TRACKS DIALOGEX 0, 0, 480, 188
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Prepare Tracks (Preview Only)"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT           "Profile:", -1, 12, 15, 78, 12
+    COMBOBOX        IDC_PREPARE_PROFILE, 94, 12, 373, 92, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Profile name:", -1, 12, 45, 78, 12
+    EDITTEXT        IDC_PREPARE_NAME, 94, 42, 373, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Destination:", -1, 12, 73, 78, 12
+    EDITTEXT        IDC_PREPARE_DESTINATION, 94, 70, 373, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Naming expression:", -1, 12, 100, 79, 23
+    EDITTEXT        IDC_PREPARE_PATTERN, 94, 98, 373, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "foobar Title Formatting; edits apply to this preview only.", -1, 94, 118, 373, 12
+    LTEXT           "No changes to tags or files. Targets and CUE links are not yet verified.", -1, 12, 142, 454, 12
+    DEFPUSHBUTTON   "Preview", IDOK, 327, 163, 66, 17
+    PUSHBUTTON      "Cancel", IDCANCEL, 401, 163, 66, 17
+END
+
+IDD_MENU_PREFERENCES DIALOGEX 0, 0, 485, 194
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT           "Metadata preview:", -1, 12, 17, 105, 12
+    EDITTEXT        IDC_CAPTION_METADATA, 122, 13, 349, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Singles preview:", -1, 12, 47, 105, 12
+    EDITTEXT        IDC_CAPTION_SINGLES, 122, 43, 349, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Albums preview:", -1, 12, 77, 105, 12
+    EDITTEXT        IDC_CAPTION_ALBEN, 122, 73, 349, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Live Sets preview:", -1, 12, 107, 105, 12
+    EDITTEXT        IDC_CAPTION_LIVESETS, 122, 103, 349, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Prepare Tracks:", -1, 12, 137, 105, 12
+    EDITTEXT        IDC_CAPTION_PREPARE, 122, 133, 349, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Manage menu visibility and hierarchy in foobar Preferences > Display > Context Menu.", -1, 12, 163, 464, 14
+    LTEXT           "Apply saves; Cancel discards; Reset stages default captions.", -1, 12, 179, 464, 12
+END
+
+IDD_BATCH_PREVIEW DIALOGEX 0, 0, 710, 396
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
+CAPTION "Prepare Tracks - Batch Preview (No Writes)"
+FONT 9, "Segoe UI"
+BEGIN
+    CONTROL         "", IDC_BATCH_LIST, "SysListView32", WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS, 10, 12, 690, 237
+    LTEXT           "Routing profile:", -1, 10, 261, 85, 12
+    COMBOBOX        IDC_BATCH_PROFILE_PICKER, 101, 258, 150, 78, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Profile name:", -1, 265, 261, 78, 12
+    EDITTEXT        IDC_BATCH_PROFILE_NAME, 347, 258, 353, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Destination:", -1, 10, 288, 85, 12
+    EDITTEXT        IDC_BATCH_DESTINATION, 101, 285, 599, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Naming expression:", -1, 10, 314, 90, 12
+    EDITTEXT        IDC_BATCH_PATTERN, 101, 311, 599, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Preview only: physical identities, CUE dependencies and existing targets are NOT qualified.", -1, 10, 335, 680, 12
+    PUSHBUTTON      "Apply to selected", IDC_BATCH_APPLY_SELECTED, 405, 363, 104, 19
+    PUSHBUTTON      "Apply to all", IDC_BATCH_APPLY_ALL, 515, 363, 87, 19
+    DEFPUSHBUTTON   "Close", IDCANCEL, 608, 363, 92, 19
+END

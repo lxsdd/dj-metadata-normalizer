@@ -4,6 +4,13 @@ project(dj_metadata_normalizer VERSION 0.1.0 LANGUAGES CXX)
 
 add_library(djmeta_core STATIC
     src/core/normalizer.cpp
+    src/core/batch_plan.cpp
+    src/core/external_cue.cpp
+    src/core/cue_association.cpp
+    src/core/staging.cpp
+    src/core/routing_overrides.cpp
+    src/core/batch_preview.cpp
+    src/core/table_layout.cpp
     src/core/rule_loader.cpp
     src/core/analysis_json.cpp
 )
@@ -56,7 +63,106 @@ else()
     target_compile_options(djmeta_c_api_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+add_executable(djmeta_batch_plan_tests
+    tests/batch_plan_tests.cpp
+)
+target_link_libraries(djmeta_batch_plan_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_batch_plan_tests PRIVATE cxx_std_20)
+
+if(MSVC)
+    target_compile_options(djmeta_batch_plan_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_batch_plan_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+add_executable(djmeta_external_cue_tests
+    tests/external_cue_tests.cpp
+)
+target_link_libraries(djmeta_external_cue_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_external_cue_tests PRIVATE cxx_std_20)
+
+if(MSVC)
+    target_compile_options(djmeta_external_cue_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_external_cue_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+add_executable(djmeta_cue_association_tests
+    tests/cue_association_tests.cpp
+)
+target_link_libraries(djmeta_cue_association_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_cue_association_tests PRIVATE cxx_std_20)
+
+if(MSVC)
+    target_compile_options(djmeta_cue_association_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_cue_association_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+add_executable(djmeta_staging_tests
+    tests/staging_tests.cpp
+)
+target_link_libraries(djmeta_staging_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_staging_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_staging_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_staging_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+add_executable(djmeta_route_profiles_tests
+    tests/route_profiles_tests.cpp
+)
+target_include_directories(djmeta_route_profiles_tests PRIVATE src/foobar)
+target_compile_features(djmeta_route_profiles_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_route_profiles_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_route_profiles_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+add_executable(djmeta_routing_overrides_tests
+    tests/routing_overrides_tests.cpp
+)
+target_link_libraries(djmeta_routing_overrides_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_routing_overrides_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_routing_overrides_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_routing_overrides_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+add_executable(djmeta_batch_preview_tests
+    tests/batch_preview_tests.cpp
+)
+target_link_libraries(djmeta_batch_preview_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_batch_preview_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_batch_preview_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_batch_preview_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+add_executable(djmeta_table_layout_tests
+    tests/table_layout_tests.cpp
+)
+target_link_libraries(djmeta_table_layout_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_table_layout_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_table_layout_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_table_layout_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_table_layout_tests COMMAND djmeta_table_layout_tests)
+add_test(NAME djmeta_batch_preview_tests COMMAND djmeta_batch_preview_tests)
+add_test(NAME djmeta_routing_overrides_tests COMMAND djmeta_routing_overrides_tests)
+add_test(NAME djmeta_route_profiles_tests COMMAND djmeta_route_profiles_tests)
+add_test(NAME djmeta_staging_tests COMMAND djmeta_staging_tests)
+add_test(NAME djmeta_cue_association_tests COMMAND djmeta_cue_association_tests)
+add_test(NAME djmeta_external_cue_tests COMMAND djmeta_external_cue_tests)
+add_test(NAME djmeta_batch_plan_tests COMMAND djmeta_batch_plan_tests)
 add_test(NAME djmeta_core_tests COMMAND djmeta_core_tests)
 set_tests_properties(djmeta_core_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME djmeta_c_api_tests COMMAND djmeta_c_api_tests)

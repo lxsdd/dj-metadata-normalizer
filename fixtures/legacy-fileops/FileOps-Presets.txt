@@ -1,0 +1,29 @@
+# This is a foo_fileops copy/move/link preset list file.
+# Use | character in preset names to create menu hierarchy: groupname|presetname.
+
+[preset]
+name=Singles
+operation=move
+targetDirectory=Z:\Music\Singles
+fileNamePattern=%album artist%/%album%/%artist% - %title%
+moveOtherFiles=yes
+removeEmpty=yes
+overwrite=yes
+
+[preset]
+name=Alben
+operation=move
+targetDirectory=Z:\Music\Alben
+fileNamePattern=%album artist%/%album%[ '('%date%')']/%tracknumber%. %artist% - %title%
+moveOtherFiles=yes
+removeEmpty=yes
+overwrite=yes
+
+[preset]
+name=Livesets
+operation=move
+targetDirectory=Z:\Music\Livesets
+fileNamePattern=%artist%\%artist% - %album%
+moveOtherFiles=yes
+removeEmpty=yes
+overwrite=yes
