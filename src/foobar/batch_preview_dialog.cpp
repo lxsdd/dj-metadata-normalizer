@@ -316,7 +316,12 @@ std::wstring metadata_cell_text(PreviewState& state,
     switch (column) {
         case 0: return from_utf8(item.field);
         case 1: return from_utf8(item.original);
-        case 2: return from_utf8(item.proposed);
+        case 2: {
+            const auto* decision = decision_for_row(state, item);
+            return from_utf8(decision &&
+                decision->action == djmeta::ReviewAction::ManualValue
+                ? decision->manual_value : item.proposed);
+        }
         case 3: return from_utf8(djmeta::to_string(item.safety));
         case 4: return review_decision_caption(state, item);
         default: return {};
@@ -720,7 +725,7 @@ void apply_review_action(HWND dialog, PreviewState& state,
         verify_snapshot(entry);
         const auto current = entry.handle->get_info_ref();
         const auto original = metadata_from_file_info(current->info());
-        const auto staged = djmeta::project_review_decisions(
+        auto staged = djmeta::project_review_decisions(
             original, state.analyses[track], next_decisions[track]);
         entry.staged = std::move(staged.document);
         entry.input.semantic_proposals_pending = staged.unresolved_semantic > 0;
@@ -1042,10 +1047,14 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                     const auto index = state->metadata_view_order[row];
                     if (index < state->focused_metadata_rows.size()) {
                         const auto& entry = state->focused_metadata_rows[index];
+                        std::string manual_info;
+                        if (const auto* decision = decision_for_row(*state, entry);
+                            decision && decision->action == djmeta::ReviewAction::ManualValue)
+                            manual_info = "\nManual staged value: " + decision->manual_value;
                         const auto label = from_utf8(
                             "Rules: " + entry.rule_ids + "\nWhy: " +
                             entry.rationales + "\nOriginal: " + entry.original +
-                            "\nProposed: " + entry.proposed);
+                            "\nRule proposal: " + entry.proposed + manual_info);
                         lstrcpynW(tip->pszText, label.c_str(), tip->cchTextMax);
                     }
                 }
