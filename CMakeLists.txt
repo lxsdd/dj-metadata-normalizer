@@ -5,6 +5,7 @@ project(dj_metadata_normalizer VERSION 0.1.0 LANGUAGES CXX)
 add_library(djmeta_core STATIC
     src/core/normalizer.cpp
     src/core/batch_plan.cpp
+    src/core/external_cue.cpp
     src/core/rule_loader.cpp
     src/core/analysis_json.cpp
 )
@@ -69,7 +70,20 @@ else()
     target_compile_options(djmeta_batch_plan_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+add_executable(djmeta_external_cue_tests
+    tests/external_cue_tests.cpp
+)
+target_link_libraries(djmeta_external_cue_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_external_cue_tests PRIVATE cxx_std_20)
+
+if(MSVC)
+    target_compile_options(djmeta_external_cue_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_external_cue_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_external_cue_tests COMMAND djmeta_external_cue_tests)
 add_test(NAME djmeta_batch_plan_tests COMMAND djmeta_batch_plan_tests)
 add_test(NAME djmeta_core_tests COMMAND djmeta_core_tests)
 set_tests_properties(djmeta_core_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
