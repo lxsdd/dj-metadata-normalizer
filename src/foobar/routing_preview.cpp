@@ -95,6 +95,25 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
             proposed.push_back(std::move(entry));
         }
 
+        // Early warning for byte-identical proposed raw targets. Real
+        // Windows/fileops destination identity is NOT established here.
+        std::map<std::string, std::size_t> raw_target_counts;
+        for (const auto& entry : proposed) {
+            if (!entry.requires_physical_selection && !entry.titleformat_empty) {
+                const std::string full = std::string(route.destination_root) +
+                    "\\" + entry.raw_relative_path;
+                ++raw_target_counts[full];
+            }
+        }
+        std::size_t raw_collision_items = 0;
+        for (const auto& entry : proposed) {
+            if (!entry.requires_physical_selection && !entry.titleformat_empty) {
+                const std::string full = std::string(route.destination_root) +
+                    "\\" + entry.raw_relative_path;
+                if (raw_target_counts[full] > 1) ++raw_collision_items;
+            }
+        }
+
         // Stale-input guard across the whole selection: rerun on change,
         // never show a plausible routing preview from mixed snapshots.
         for (const auto& entry : proposed) {
@@ -118,6 +137,8 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
         report += std::to_string(total_safe);
         report += "\nNicht uebernommene CONFIDENT/REVIEW-Vorschlaege: ";
         report += std::to_string(total_unresolved);
+        report += "\nGleiche rohe Zielnamen (Eintraege): ";
+        report += std::to_string(raw_collision_items);
         report += "\n\nManuell gewaehltes Preset: ";
         report += route.name;
         report += "\nZielordner (Referenz): ";
@@ -144,6 +165,10 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
             report += single_line(route.destination_root);
             report += "\\";
             report += single_line(entry.raw_relative_path);
+            const std::string full_raw_target = std::string(route.destination_root) +
+                "\\" + entry.raw_relative_path;
+            if (raw_target_counts[full_raw_target] > 1)
+                report += "\n  KONFLIKTHINWEIS: gleicher Roh-Zielname mehrfach vorhanden.";
             if (entry.unresolved_proposals != 0)
                 report += "\n  Hinweis: fachliche Tagvorschlaege sind noch nicht freigegeben.";
         }
@@ -155,6 +180,7 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
 
         report += "\n\nWICHTIG: Dies sind Rohwerte aus Title Formatting, ";
         report += "KEINE geprueften File-Operations-Zielpfade.";
+        report += "\nAuch unterschiedliche Rohpfade koennen dasselbe Windows-Ziel bezeichnen.";
         report += "\nDateinamen-Sanitizing, existierende Ziele, externe CUE-Dateien, ";
         report += "Begleitdateien und Zeitstempelrichtlinien sind hier noch NICHT geprueft.";
         report += "\nAndere Routen koennen im Kontextmenue manuell gewaehlt werden.";
