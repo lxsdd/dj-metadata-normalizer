@@ -4,6 +4,7 @@
 #include "metadata_adapter.h"
 #include "routing_preview.h"
 #include "rules_runtime.h"
+#include "djmeta/staging.h"
 #include "titleformat_planner.h"
 
 #include <map>
@@ -36,33 +37,6 @@ std::string single_line(std::string_view text, std::size_t max_bytes = 240) {
     return out;
 }
 
-djmeta::MetadataDocument staged_safe_metadata(
-    const djmeta::MetadataDocument& original,
-    const djmeta::AnalysisResult& analysis,
-    std::size_t& safe_count,
-    std::size_t& unresolved_count) {
-
-    // The analysis engine projects all proposed transformations, including
-    // semantic REVIEW changes. These are NOT approved. Never use them for
-    // filename planning by default.
-    djmeta::MetadataDocument staged = original;
-    for (const djmeta::Proposal& proposal : analysis.proposals) {
-        if (proposal.safety != djmeta::SafetyClass::Safe) {
-            ++unresolved_count;
-            continue;
-        }
-        if (proposal.field_index >= staged.fields.size() ||
-            proposal.value_index >= staged.fields[proposal.field_index].values.size() ||
-            staged.fields[proposal.field_index].values[proposal.value_index] !=
-                proposal.original_value) {
-            throw std::runtime_error("Die SAFE-Metadatenprojektion ist inkonsistent.");
-        }
-        staged.fields[proposal.field_index].values[proposal.value_index] =
-            proposal.proposed_value;
-        ++safe_count;
-    }
-    return staged;
-}
 
 } // namespace
 
@@ -106,15 +80,15 @@ void show_legacy_route_preview(const metadb_handle_list& handles, std::size_t ro
             if (entry.requires_physical_selection) {
                 ++physically_ambiguous;
             } else {
-                auto canonical = staged_safe_metadata(
-                    original, analysis, entry.safe_proposals,
-                    entry.unresolved_proposals);
+                const auto staged = djmeta::stage_safe_only(original, analysis);
+                entry.safe_proposals = staged.safe_proposals_applied;
+                entry.unresolved_proposals = staged.unresolved_proposals;
                 total_safe += entry.safe_proposals;
                 total_unresolved += entry.unresolved_proposals;
                 // Compile/evaluate using foobar's actual titleformat compiler
                 // and an in-memory file_info; no custom parser and no writes.
                 entry.raw_relative_path = evaluate_titleformat_against_canonical(
-                    handle->get_location(), info, canonical,
+                    handle->get_location(), info, staged.document,
                     route.foobar_titleformat);
                 entry.titleformat_empty = entry.raw_relative_path.empty();
             }
