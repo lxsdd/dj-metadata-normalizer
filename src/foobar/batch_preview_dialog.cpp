@@ -653,8 +653,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         state->dark.AddDialogWithControls(dialog);
         state->list = GetDlgItem(dialog, IDC_BATCH_LIST);
         state->metadata_list = GetDlgItem(dialog, IDC_METADATA_LIST);
+        state->metadata_track_list = GetDlgItem(dialog, IDC_METADATA_TRACK_LIST);
+        state->metadata_filter = GetDlgItem(dialog, IDC_METADATA_FILTER);
         state->tabs = GetDlgItem(dialog, IDC_BATCH_TABS);
-        if (!state->list || !state->metadata_list || !state->tabs) return FALSE;
+        if (!state->list || !state->metadata_list || !state->metadata_track_list ||
+            !state->metadata_filter || !state->tabs) return FALSE;
         for (const wchar_t* name : {L"Metadata changes", L"File locations"}) {
             TCITEMW tab{};
             tab.mask = TCIF_TEXT;
@@ -662,14 +665,24 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             TabCtrl_InsertItem(state->tabs, TabCtrl_GetItemCount(state->tabs), &tab);
         }
         TabCtrl_SetCurSel(state->tabs, 0);
+        ListView_SetExtendedListViewStyle(state->metadata_track_list,
+            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP |
+            LVS_EX_HEADERDRAGDROP);
+        add_column(state->metadata_track_list, 0, L"Track", 173);
+        add_column(state->metadata_track_list, 1, L"Music", 40);
+        add_column(state->metadata_track_list, 2, L"Other", 40);
+        add_column(state->metadata_track_list, 3, L"Review", 45);
         ListView_SetExtendedListViewStyle(state->metadata_list,
-            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP);
-        add_column(state->metadata_list, 0, L"Source file", 240);
-        add_column(state->metadata_list, 1, L"Field", 110);
-        add_column(state->metadata_list, 2, L"Original", 235);
-        add_column(state->metadata_list, 3, L"Proposed", 235);
-        add_column(state->metadata_list, 4, L"Safety", 95);
-        add_column(state->metadata_list, 5, L"Rule IDs", 200);
+            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP |
+            LVS_EX_HEADERDRAGDROP);
+        add_column(state->metadata_list, 0, L"Field", 88);
+        add_column(state->metadata_list, 1, L"Original", 120);
+        add_column(state->metadata_list, 2, L"Proposed", 120);
+        add_column(state->metadata_list, 3, L"Safety", 65);
+        for (const wchar_t* focus : {L"Music tags", L"Extended tags", L"All fields"})
+            SendDlgItemMessageW(dialog, IDC_METADATA_FILTER, CB_ADDSTRING,
+                0, reinterpret_cast<LPARAM>(focus));
+        SendDlgItemMessageW(dialog, IDC_METADATA_FILTER, CB_SETCURSEL, 0, 0);
 
         ListView_SetExtendedListViewStyle(state->list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
@@ -709,10 +722,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                         from_utf8(state->current_choice.destination_root).c_str());
         SetDlgItemTextW(dialog, IDC_BATCH_PATTERN,
                         from_utf8(state->current_choice.titleformat_expression).c_str());
+        state->dialog = dialog;
         update_table(*state);
+        update_master_table(*state);
         update_metadata_table(*state);
         show_preview_page(dialog, *state, true);
-        state->dialog = dialog;
         capture_resize_layout(*state);
         return TRUE;
         } catch (const std::exception&) {
