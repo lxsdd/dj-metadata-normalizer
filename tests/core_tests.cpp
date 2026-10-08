@@ -108,6 +108,68 @@ void test_unicode_whitespace_schema_v2() {
             "malformed UTF-8 preservation changed metadata");
 }
 
+void test_structured_cuesheet_and_multiline_fields_are_never_flattened() {
+    const std::string cue =
+        "FILE \"Album.flac\" WAVE\r\n"
+        "  TRACK 01 AUDIO\r\n"
+        "    INDEX 01 00:00:00\r\n"
+        "  TRACK 02 AUDIO\r\n"
+        "    INDEX 01 04:32:00\r\n";
+    const std::string lyrics = "Verse  1\n  Second line\r\n";
+    const std::string comment = "Line one  \nLine  two";
+    const std::string unicode_lines =
+        std::string("One") + "\xE2\x80\xA8" + "  Two";
+    const djmeta::MetadataDocument input{{
+        {"CUESHEET", {cue}},
+        {"__cuesheet", {cue}},
+        {"CUE_SHEET", {cue}},
+        {"LYRICS", {lyrics}},
+        {"UNSYNCEDLYRICS", {"  One  line  "}},
+        {"COMMENT", {comment}},
+        {"CUSTOM", {unicode_lines}},
+        {"TITLE", {"  A   Title  "}}
+    }};
+    const auto copy = input;
+    const auto result = djmeta::Engine{}.analyze(
+        input, {unicode_whitespace_rule(), trim_rule(), collapse_rule()},
+        "same-v2-ruleset-revision");
+    require(input == copy, "structured input was modified");
+    require(result.proposals.size() == 1 && result.changes.size() == 2,
+            "generic SAFE cleanup must propose only scalar TITLE changes");
+    require(result.canonical_preview.fields.back().values[0] == "A Title",
+            "normal scalar TITLE normalization unexpectedly disabled");
+    for (std::size_t i = 0; i < input.fields.size() - 1; ++i)
+        require(result.canonical_preview.fields[i] == input.fields[i],
+                "embedded CUE, lyrics, or line breaks must remain byte-identical");
+
+    // Even an explicit CUESHEET rewrite uses the dedicated editor, not
+    // the generic Metadata Normalizer projection.
+    djmeta::Rule dangerous{
+        "review.cue-rewrite", true, 1, {"CUESHEET"},
+        djmeta::MatchKind::Always, "", false,
+        djmeta::TransformKind::ReplaceWith, "broken cue",
+        djmeta::SafetyClass::Review,
+        "CUE must use the separate explicit editor", "manual", ""
+    };
+    const auto rejected = djmeta::Engine{}.analyze(input, {dangerous}, "cue-protected");
+    require(rejected.proposals.empty() && rejected.canonical_preview == input,
+            "generic rule must never write embedded CUESHEET field");
+
+    // Explicitly selected semantic lyrics replacements remain REVIEW,
+    // rather than being silently modified by wildcard whitespace rules.
+    djmeta::Rule manual_lyrics{
+        "review.lyrics", true, 1, {"LYRICS"},
+        djmeta::MatchKind::Always, "", false,
+        djmeta::TransformKind::ReplaceWith, "Corrected line",
+        djmeta::SafetyClass::Review, "Manually reviewed lyrics", "manual", ""
+    };
+    const auto reviewed = djmeta::Engine{}.analyze(input, {manual_lyrics}, "lyrics-review");
+    require(reviewed.proposals.size() == 1 &&
+            reviewed.proposals[0].field == "LYRICS" &&
+            reviewed.proposals[0].safety == djmeta::SafetyClass::Review,
+            "explicit lyrics editing must require semantic review");
+}
+
 void test_exact_alias_and_safety() {
     djmeta::Rule alias{
         "review.label.defected-records", true, 100, {"LABEL"},
@@ -338,6 +400,7 @@ void test_fingerprint_contract() {
 int main() {
     test_preview_is_immutable_and_ordered();
     test_unicode_whitespace_schema_v2();
+    test_structured_cuesheet_and_multiline_fields_are_never_flattened();
     test_exact_alias_and_safety();
     test_multivalue_preservation();
     test_duplicate_field_names_keep_structural_identity();

@@ -66,6 +66,33 @@ void test_schema_v2_unicode_whitespace() {
     djmeta_free_string_v1(output);
 }
 
+void test_structured_fields_preserved_through_shared_native_abi() {
+    const char* metadata =
+        R"([{"name":"CUESHEET","values":["FILE \"X.flac\" WAVE\n  TRACK 01 AUDIO"]},)"
+        R"({"name":"LYRICS","values":["  First\n  Second  "]},)"
+        R"({"name":"TITLE","values":["  Normal  Title  "]}])";
+    const char* rules =
+        R"({"schema_version":2,"ruleset_id":"cue-guard","revision":"r2","rules":[)"
+        R"({"id":"safe.unicode","enabled":true,"priority":5,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"normalize_unicode_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"unicode"}},)"
+        R"({"id":"safe.trim","enabled":true,"priority":10,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"trim_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"trim"}},)"
+        R"({"id":"safe.collapse","enabled":true,"priority":20,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"collapse_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"collapse"}}]})";
+    char* output = nullptr;
+    char* error = nullptr;
+    const int status = djmeta_analyze_json_v1(metadata, rules, &output, &error);
+    require(status == DJMETA_STATUS_OK && output && !error,
+            "shared DJ Library native ABI failed structured field case");
+    const std::string json(output);
+    require(json.find("\"field\":\"CUESHEET\"") == std::string::npos &&
+            json.find("\"field\":\"LYRICS\"") == std::string::npos,
+            "native ABI incorrectly proposed structural field edits");
+    require(json.find("\"field\":\"TITLE\"") != std::string::npos,
+            "native ABI lost valid scalar TITLE proposal");
+    require(json.find("TRACK 01 AUDIO") != std::string::npos &&
+            json.find("First") != std::string::npos,
+            "native ABI must retain original structural values in canonical preview");
+    djmeta_free_string_v1(output);
+}
+
 void test_errors_do_not_cross_abi() {
     char* output = nullptr;
     char* error = nullptr;
@@ -89,6 +116,7 @@ int main() {
     require(djmeta_abi_version() == 1u, "unexpected native ABI version");
     test_success();
     test_schema_v2_unicode_whitespace();
+    test_structured_fields_preserved_through_shared_native_abi();
     test_errors_do_not_cross_abi();
     std::cout << "PASS: djmeta native analysis ABI\n";
     return 0;

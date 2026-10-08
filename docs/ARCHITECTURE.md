@@ -113,3 +113,26 @@ Virtual subsongs require a separate qualification gate because writes must not e
 ## Unified prepare-track workflow
 
 The approved end-state extends planning beyond tags to filename and destination. See `docs/UNIFIED-WORKFLOW.md`. The shared engine computes desired state; the foobar adapter inherits host policy for configuration, title formatting, tag writes and file operations wherever supported by the SDK.
+
+## Structural metadata protection (core safety hotfix)
+
+The default ruleset remains schema v2, revision `2026-10-07.2`, and the shared
+C ABI remains v1. Its three wildcard SAFE whitespace rules continue to normalize
+single-line scalar tags. The engine now **always excludes** embedded `CUESHEET`,
+`CUE_SHEET` and `__CUESHEET` values from generic proposals; only dedicated
+CUE tools may modify embedded cue records. Generic whitespace transformations
+are also ineligible for lyrics fields and values containing CR/LF, NEL, U+2028
+or U+2029 line boundaries. This prevents flattening structured/multiline
+metadata into a single line.
+
+Explicit `replace_with` rules for lyrics remain possible as `REVIEW`, not as
+implicit SAFE normalization. The CUE exclusion applies even to explicit
+generic rules. The input document, fields, value cardinality, and original
+bytes remain untouched.
+
+Shared-consumer compatibility: DJ Library invokes `djmeta_analyze_json_v1`
+and consumes schema-v1 analysis JSON; this change does not alter either
+interface, the rule file, or the TITLE self-test revision. Normalizer unit
+tests and a native ABI test include structural examples. A full DJ Library
+WPF runtime test remains independently blocked by its private Windows CI
+runner and is **not** claimed PASS.
