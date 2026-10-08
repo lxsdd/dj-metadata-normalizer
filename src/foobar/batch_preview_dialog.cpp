@@ -242,6 +242,8 @@ std::string status_text(const djmeta::BatchPreviewRow& row) {
         if (issue == "UNSAFE_RAW_RELATIVE_TARGET") return "Raw target: unsafe";
         if (issue == "DUPLICATE_RAW_TARGET") return "Duplicate raw target";
         if (issue == "RAW_TARGET_ALIASES_SOURCE") return "Raw target: source alias";
+        if (issue == "RAW_TARGET_IS_BATCH_SOURCE") return "Raw target: batch source";
+        if (issue == "RAW_TARGET_SHARED_PHYSICAL_ID") return "Raw targets: same file";
         if (issue == "RAW_TARGET_EXISTS") return "Raw candidate exists";
         if (issue == "RAW_TARGET_PROBE_UNQUALIFIED") return "Raw target: unqualified";
         if (issue == "UNAPPROVED_METADATA_PROPOSALS") return "Metadata: REVIEW";
