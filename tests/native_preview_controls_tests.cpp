@@ -68,6 +68,33 @@ int main() {
     check(std::wcscmp(value, L"My DJ profile") == 0,
           "custom profile text survives in the actual control");
 
+    HWND review_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
+    HWND manual = GetDlgItem(dialog, IDC_METADATA_MANUAL_INPUT);
+    check(review_scope && manual &&
+          (static_cast<DWORD>(GetWindowLongPtrW(review_scope, GWL_STYLE)) & 0x3u) ==
+              CBS_DROPDOWNLIST,
+          "review scope is the real non-editable Windows selection control");
+    check(SetWindowTextW(manual, L"Custom review value") != FALSE,
+          "manual value control accepts editor text");
+    wchar_t manual_text[128]{};
+    GetWindowTextW(manual, manual_text, 128);
+    check(std::wcscmp(manual_text, L"Custom review value") == 0,
+          "manual value roundtrip uses the actual Win32 control");
+    RECT client{};
+    GetClientRect(dialog, &client);
+    for (int id : {IDC_METADATA_ACCEPT, IDC_METADATA_REJECT,
+                   IDC_METADATA_RESET, IDC_METADATA_USE_VALUE}) {
+        HWND button = GetDlgItem(dialog, id);
+        check(button != nullptr, "production review action exists");
+        RECT bounds{};
+        GetWindowRect(button, &bounds);
+        MapWindowPoints(HWND_DESKTOP, dialog,
+                        reinterpret_cast<POINT*>(&bounds), 2);
+        check(bounds.left >= 0 && bounds.right <= client.right &&
+              bounds.top >= 0 && bounds.bottom <= client.bottom,
+              "review actions fit inside minimum-sized native dialog");
+    }
+
     for (int id : {IDC_METADATA_TRACK_LIST, IDC_METADATA_LIST}) {
         HWND list = GetDlgItem(dialog, id);
         check(list != nullptr, "actual master/detail list control present");
@@ -96,7 +123,8 @@ int main() {
           "preview actions exist in production resource");
 
     DestroyWindow(dialog);
-    std::cout << "PASS: real Win32 preview resource, editable profile, "
+    std::cout << "PASS: real Win32 review scope, manual input, action bounds; "
+                 "native preview resource, editable profile, "
                  "virtual master/detail controls and shared label alignment\n";
     return 0;
 }
