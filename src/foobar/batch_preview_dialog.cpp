@@ -65,6 +65,7 @@ struct PreviewState {
     HWND metadata_list = nullptr;
     HWND metadata_track_list = nullptr;
     HWND metadata_filter = nullptr;
+    HWND metadata_track_filter = nullptr;
     HWND tabs = nullptr;
     bool show_metadata = true;
     int metadata_sort_column = 0;
@@ -74,6 +75,7 @@ struct PreviewState {
     bool updating_track_selection = false;
     std::size_t selected_track_index = 0;
     djmeta::MetadataFocus metadata_focus = djmeta::MetadataFocus::Music;
+    djmeta::TrackDiscovery track_discovery = djmeta::TrackDiscovery::All;
     std::vector<djmeta::TrackReviewSummary> track_summaries;
     std::vector<std::size_t> track_view_order;
     std::vector<djmeta::MetadataDiffRow> focused_metadata_rows;
@@ -298,6 +300,9 @@ void update_metadata_table(PreviewState& state) {
             L" extended; " + std::to_wstring(summary.review_required) +
             L" need review. Preview only; no tags were written.";
         SetDlgItemTextW(state.dialog, IDC_BATCH_HINT, notice.c_str());
+    } else if (state.dialog && state.show_metadata) {
+        SetDlgItemTextW(state.dialog, IDC_BATCH_HINT,
+            L"No tracks match this filter. Choose All tracks to restore the full list.");
     }
 }
 
@@ -309,6 +314,14 @@ void update_master_table(PreviewState& state) {
     state.track_view_order = djmeta::sort_track_summaries(
         state.track_summaries, labels, state.track_sort_column,
         state.track_sort_descending);
+    state.track_view_order = djmeta::filter_track_view(
+        state.track_summaries, state.track_view_order, state.track_discovery);
+    // The chosen item is an underlying source identity, never a view row.
+    // If a filter hides it, choose the first visible track or no selection.
+    if (std::find(state.track_view_order.begin(), state.track_view_order.end(),
+                  state.selected_track_index) == state.track_view_order.end())
+        state.selected_track_index = state.track_view_order.empty()
+            ? state.track_summaries.size() : state.track_view_order.front();
     if (!state.metadata_track_list) return;
     state.updating_track_selection = true;
     ListView_SetItemCountEx(state.metadata_track_list,
@@ -332,6 +345,9 @@ void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
     ShowWindow(state.metadata_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_track_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_filter, metadata ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.metadata_track_filter, metadata ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER_LABEL),
+        metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_FILTER_LABEL),
         metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.list, metadata ? SW_HIDE : SW_SHOW);
@@ -660,9 +676,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         state->metadata_list = GetDlgItem(dialog, IDC_METADATA_LIST);
         state->metadata_track_list = GetDlgItem(dialog, IDC_METADATA_TRACK_LIST);
         state->metadata_filter = GetDlgItem(dialog, IDC_METADATA_FILTER);
+        state->metadata_track_filter = GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER);
         state->tabs = GetDlgItem(dialog, IDC_BATCH_TABS);
         if (!state->list || !state->metadata_list || !state->metadata_track_list ||
-            !state->metadata_filter || !state->tabs) return FALSE;
+            !state->metadata_filter || !state->metadata_track_filter ||
+            !state->tabs) return FALSE;
         for (const wchar_t* name : {L"Metadata changes", L"File locations"}) {
             TCITEMW tab{};
             tab.mask = TCIF_TEXT;
@@ -688,6 +706,10 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             SendDlgItemMessageW(dialog, IDC_METADATA_FILTER, CB_ADDSTRING,
                 0, reinterpret_cast<LPARAM>(focus));
         SendDlgItemMessageW(dialog, IDC_METADATA_FILTER, CB_SETCURSEL, 0, 0);
+        for (const wchar_t* status : {L"All tracks", L"Changed tracks", L"Review required"})
+            SendDlgItemMessageW(dialog, IDC_METADATA_TRACK_FILTER, CB_ADDSTRING,
+                0, reinterpret_cast<LPARAM>(status));
+        SendDlgItemMessageW(dialog, IDC_METADATA_TRACK_FILTER, CB_SETCURSEL, 0, 0);
 
         ListView_SetExtendedListViewStyle(state->list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
@@ -930,6 +952,16 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     if (message != WM_COMMAND) return FALSE;
     const int id = LOWORD(wp);
     try {
+        if (id == IDC_METADATA_TRACK_FILTER && HIWORD(wp) == CBN_SELCHANGE) {
+            const auto choice = SendDlgItemMessageW(
+                dialog, IDC_METADATA_TRACK_FILTER, CB_GETCURSEL, 0, 0);
+            state->track_discovery = choice == 1 ? djmeta::TrackDiscovery::Changed :
+                choice == 2 ? djmeta::TrackDiscovery::NeedsReview :
+                djmeta::TrackDiscovery::All;
+            update_master_table(*state);
+            update_metadata_table(*state);
+            return TRUE;
+        }
         if (id == IDC_METADATA_FILTER && HIWORD(wp) == CBN_SELCHANGE) {
             const auto choice = SendDlgItemMessageW(
                 dialog, IDC_METADATA_FILTER, CB_GETCURSEL, 0, 0);
