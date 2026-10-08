@@ -46,6 +46,7 @@ struct PreviewEntry {
     std::string observed_physical_key; // actual host-reported file ID, not a path guess
     std::string observed_source_guard; // read-only file version evidence
     std::string source_probe_detail;   // only shown as a preview diagnostic
+    std::string raw_target_probe_detail; // never represents foobar's final FileOps destination
 };
 
 struct ResizableControl {
@@ -189,6 +190,16 @@ void verify_snapshot(const PreviewEntry& entry) {
             "Close and reopen Prepare Tracks.");
 }
 
+void reset_raw_target_observation(PreviewEntry& entry) {
+    entry.input.raw_target_presence = djmeta::RawTargetPresence::NotInspected;
+    entry.input.raw_target_physical_key.clear();
+    entry.input.raw_target_guard.clear();
+    entry.raw_target_probe_detail.clear();
+    // This flag is reserved for the actual host-resolved, post-sanitization
+    // destination. A raw file probe must never set it.
+    entry.input.filesystem_target_checked = false;
+}
+
 void update_table(PreviewState& state) {
     // Preserve underlying identities, NOT virtual screen positions, when
     // a sort or user override causes displayed rows to change order.
@@ -230,8 +241,13 @@ std::string status_text(const djmeta::BatchPreviewRow& row) {
         if (issue == "TARGET_EXPRESSION_EMPTY") return "Empty target: REVIEW";
         if (issue == "UNSAFE_RAW_RELATIVE_TARGET") return "Raw target: unsafe";
         if (issue == "DUPLICATE_RAW_TARGET") return "Duplicate raw target";
+        if (issue == "RAW_TARGET_ALIASES_SOURCE") return "Raw target: source alias";
+        if (issue == "RAW_TARGET_EXISTS") return "Raw candidate exists";
+        if (issue == "RAW_TARGET_PROBE_UNQUALIFIED") return "Raw target: unqualified";
         if (issue == "UNAPPROVED_METADATA_PROPOSALS") return "Metadata: REVIEW";
     }
+    if (row.raw_target_presence == djmeta::RawTargetPresence::Missing)
+        return "Raw candidate absent";
     // Global limitations are explained in the footer rather than shown
     // repeatedly as a warning in every otherwise unremarkable row.
     return "";
@@ -475,8 +491,8 @@ void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
         update_metadata_table(state);
     } else {
         SetDlgItemTextW(dialog, IDC_BATCH_HINT,
-            L"File targets and CUE dependencies are not verified. "
-            L"Routing changes affect this preview only.");
+            L"Right-click selected rows to inspect raw candidate targets (read-only). "
+            L"Final foobar destinations and CUE dependencies are NOT verified.");
     }
 }
 
@@ -849,6 +865,7 @@ void apply_review_action(HWND dialog, PreviewState& state,
         entry.staged = std::move(staged.document);
         entry.input.semantic_proposals_pending = staged.unresolved_semantic > 0;
         entry.input.raw_relative_path.clear();
+        reset_raw_target_observation(entry);
         // Any decision invalidates prior filesystem/CUE preflight, even if a
         // user picks the original value. No file or tag writer is invoked.
         entry.input.filesystem_target_checked = false;
@@ -902,6 +919,7 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
         entry.input.destination_root = choice.destination_root;
         entry.route_expression = choice.titleformat_expression;
         entry.input.raw_relative_path.clear();
+        reset_raw_target_observation(entry);
         entry.input.filesystem_target_checked = false;
         entry.input.cue_dependencies_checked = false;
         if (!entry.input.physical_source_qualified) continue;
@@ -919,6 +937,90 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
 
     state.entries = std::move(candidate);
     state.current_choice = choice;
+    update_table(state);
+}
+
+// User-initiated inspection of RAW, unsanitized candidate paths only. No
+// host File Operations resolution, no write/overwrite approval, no CUE gate.
+// Scope deliberately follows selected underlying row IDs after sorting.
+void inspect_selected_raw_targets(HWND dialog, PreviewState& state) {
+    const RoutePreviewChoice typed = read_choice(dialog);
+    if (typed.display_name != state.current_choice.display_name ||
+        typed.destination_root != state.current_choice.destination_root ||
+        typed.titleformat_expression != state.current_choice.titleformat_expression)
+        throw std::invalid_argument(
+            "Apply edited route settings to the preview before inspecting targets.");
+
+    std::set<std::size_t> selected;
+    int view_row = -1;
+    while ((view_row = ListView_GetNextItem(state.list, view_row, LVNI_SELECTED)) >= 0) {
+        const auto view = static_cast<std::size_t>(view_row);
+        if (view < state.view_order.size())
+            selected.insert(state.view_order[view]);
+    }
+    if (selected.empty())
+        throw std::invalid_argument("Select raw destination rows before inspection.");
+    verify_rules_snapshot(state.captured_rules);
+
+    struct RawObservation {
+        std::size_t index;
+        HostFileObservation observed;
+    };
+    std::vector<RawObservation> observations;
+    observations.reserve(selected.size());
+    for (const auto index : selected) {
+        const PreviewEntry& entry = state.entries.at(index);
+        verify_snapshot(entry);
+        if (!entry.input.physical_source_qualified ||
+            entry.observed_physical_key.empty() ||
+            entry.observed_source_guard.empty())
+            throw std::invalid_argument(
+                "An unqualified physical source cannot be inspected as a file move.");
+        if (entry.input.destination_root.empty() ||
+            !djmeta::raw_relative_path_lexically_safe(entry.input.raw_relative_path))
+            throw std::invalid_argument(
+                "A raw filename is empty/unsafe; adjust routing before inspection.");
+
+        const HostFileObservation latest =
+            probe_host_file_readonly(entry.input.source_path);
+        if (latest.state != HostFileState::ExistingFile ||
+            latest.host_physical_key != entry.observed_physical_key ||
+            latest.source_guard != entry.observed_source_guard)
+            throw std::runtime_error(
+                "Physical source changed since preview. Reopen Prepare Tracks.");
+
+        // Reading the literal route does not mimic foobar's filename
+        // sanitization or automatic source-extension handling.
+        const std::string raw_candidate = entry.input.destination_root +
+            "\\\\" + entry.input.raw_relative_path;
+        observations.push_back({index, probe_host_file_readonly(raw_candidate)});
+    }
+    // All-or-nothing UI update: revalidate the entire captured metadata and
+    // ruleset snapshot after the slowest selected filesystem observation.
+    for (const auto& entry : state.entries) verify_snapshot(entry);
+    verify_rules_snapshot(state.captured_rules);
+    for (auto& result : observations) {
+        PreviewEntry& entry = state.entries[result.index];
+        auto& input = entry.input;
+        input.raw_target_physical_key.clear();
+        input.raw_target_guard.clear();
+        entry.raw_target_probe_detail = result.observed.detail;
+        switch (result.observed.state) {
+        case HostFileState::Missing:
+            input.raw_target_presence = djmeta::RawTargetPresence::Missing;
+            break;
+        case HostFileState::ExistingFile:
+            input.raw_target_presence = djmeta::RawTargetPresence::Existing;
+            input.raw_target_physical_key = result.observed.host_physical_key;
+            input.raw_target_guard = result.observed.source_guard;
+            break;
+        case HostFileState::Unqualified:
+        default:
+            input.raw_target_presence = djmeta::RawTargetPresence::Unqualified;
+            break;
+        }
+        input.filesystem_target_checked = false; // invariant: final target unknown
+    }
     update_table(state);
 }
 
@@ -1003,6 +1105,7 @@ std::vector<PreviewEntry> capture_preview(
             continue;
         }
         entry.input.physical_source_qualified = true;
+        entry.input.source_physical_key = entry.observed_physical_key;
         const auto current = entry.handle->get_info_ref();
         entry.input.raw_relative_path = evaluate_titleformat_against_canonical(
             entry.handle->get_location(), current->info(), entry.staged,
@@ -1285,7 +1388,10 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                         const auto& entry = state->entries[source_row];
                         const std::wstring detail = from_utf8(
                             entry.source_probe_detail +
-                            "\nDestination and CUE links still require final host preflight.");
+                            "\nRaw candidate: " +
+                            (entry.raw_target_probe_detail.empty()
+                                ? std::string("not inspected") : entry.raw_target_probe_detail) +
+                            "\nFinal foobar destination and CUE links remain unqualified.");
                         lstrcpynW(tip->pszText, detail.c_str(), tip->cchTextMax);
                     }
                 }
@@ -1328,6 +1434,31 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         // Fallback for dialog-forwarded header notifications; the subclass
         // handles native keyboard and right-click delivery directly.
         const HWND requested = reinterpret_cast<HWND>(wp);
+        if (requested == state->list) {
+            const HMENU menu = CreatePopupMenu();
+            if (!menu) return TRUE;
+            constexpr UINT inspectCommand = 41300u;
+            AppendMenuW(menu, MF_STRING |
+                (ListView_GetSelectedCount(state->list) ? MF_ENABLED : MF_GRAYED),
+                inspectCommand, L"Inspect selected raw targets (read-only)");
+            POINT point{};
+            if (lp == static_cast<LPARAM>(-1)) {
+                RECT rect{};
+                GetWindowRect(state->list, &rect);
+                point.x = rect.left + 12;
+                point.y = rect.top + 12;
+            } else {
+                point.x = static_cast<short>(LOWORD(lp));
+                point.y = static_cast<short>(HIWORD(lp));
+            }
+            const UINT command = TrackPopupMenu(menu,
+                TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y,
+                0, dialog, nullptr);
+            DestroyMenu(menu);
+            if (command == inspectCommand)
+                SendMessageW(dialog, WM_COMMAND, MAKEWPARAM(inspectCommand, 0), 0);
+            return TRUE;
+        }
         if (requested == ListView_GetHeader(state->list)) {
             show_column_menu(dialog, *state, lp);
             return TRUE;
@@ -1434,6 +1565,10 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                 choice == 2 ? djmeta::MetadataFocus::All :
                 djmeta::MetadataFocus::Music;
             update_metadata_table(*state);
+            return TRUE;
+        }
+        if (id == 41300u) {
+            inspect_selected_raw_targets(dialog, *state);
             return TRUE;
         }
         if (id == IDC_BATCH_PROFILE_PICKER && HIWORD(wp) == CBN_SELCHANGE) {
