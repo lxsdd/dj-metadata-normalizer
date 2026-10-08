@@ -2,6 +2,7 @@
 #include "djmeta/structural_guard.h"
 
 #include <map>
+#include <set>
 #include <string_view>
 #include <string>
 #include <vector>
@@ -58,6 +59,15 @@ BatchPreviewTable describe_batch_preview(
     BatchPreviewTable out;
     out.rows.resize(items.size());
     std::map<std::string, std::size_t> counts;
+    std::map<std::string, std::size_t> observed_target_key_counts;
+    std::set<std::string> observed_source_keys;
+    for (const auto& item : items) {
+        if (item.physical_source_qualified && !item.source_physical_key.empty())
+            observed_source_keys.insert(item.source_physical_key);
+        if (item.raw_target_presence == RawTargetPresence::Existing &&
+            !item.raw_target_physical_key.empty() && !item.raw_target_guard.empty())
+            ++observed_target_key_counts[item.raw_target_physical_key];
+    }
     // Deliberately raw, case-sensitive counts only. Windows canonicalization
     // remains a responsibility of the future foobar host filesystem planner.
     for (const auto& item : items) {
@@ -97,6 +107,10 @@ BatchPreviewTable describe_batch_preview(
             else if (!item.source_physical_key.empty() &&
                      item.source_physical_key == item.raw_target_physical_key)
                 row.issues.emplace_back("RAW_TARGET_ALIASES_SOURCE");
+            else if (observed_source_keys.count(item.raw_target_physical_key) != 0)
+                row.issues.emplace_back("RAW_TARGET_IS_BATCH_SOURCE");
+            else if (observed_target_key_counts[item.raw_target_physical_key] > 1)
+                row.issues.emplace_back("RAW_TARGET_SHARED_PHYSICAL_ID");
             else
                 row.issues.emplace_back("RAW_TARGET_EXISTS");
             break;
