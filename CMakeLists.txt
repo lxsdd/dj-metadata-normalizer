@@ -107,7 +107,19 @@ else()
     target_compile_options(djmeta_staging_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+add_executable(djmeta_route_profiles_tests
+    tests/route_profiles_tests.cpp
+)
+target_include_directories(djmeta_route_profiles_tests PRIVATE src/foobar)
+target_compile_features(djmeta_route_profiles_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_route_profiles_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_route_profiles_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_route_profiles_tests COMMAND djmeta_route_profiles_tests)
 add_test(NAME djmeta_staging_tests COMMAND djmeta_staging_tests)
 add_test(NAME djmeta_cue_association_tests COMMAND djmeta_cue_association_tests)
 add_test(NAME djmeta_external_cue_tests COMMAND djmeta_external_cue_tests)
