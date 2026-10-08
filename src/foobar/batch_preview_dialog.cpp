@@ -520,7 +520,8 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
 
 std::vector<PreviewEntry> capture_preview(
     const metadb_handle_list& handles,
-    const RoutePreviewChoice& choice) {
+    const RoutePreviewChoice& choice,
+    std::vector<djmeta::AnalysisResult>& analyses) {
 
     const auto loaded = load_rules_text();
     const auto rules = djmeta::parse_ruleset_json(loaded.json);
@@ -536,7 +537,7 @@ std::vector<PreviewEntry> capture_preview(
         const auto info_ref = handle->get_info_ref();
         const file_info& info = info_ref->info();
         const auto original = metadata_from_file_info(info);
-        const auto result = djmeta::Engine{}.analyze(
+        auto result = djmeta::Engine{}.analyze(
             original, rules.rules, rules.revision);
         auto staged = djmeta::stage_safe_only(original, result);
 
@@ -562,6 +563,7 @@ std::vector<PreviewEntry> capture_preview(
                 choice.titleformat_expression);
         }
         entries.push_back(std::move(entry));
+        analyses.push_back(std::move(result));
     }
     for (const auto& entry : entries) verify_snapshot(entry);
     return entries;
@@ -733,8 +735,12 @@ void show_batch_preview_dialog(
 
         PreviewState state;
         state.current_choice = initial_choice;
-        state.entries = capture_preview(handles, initial_choice);
+        state.entries = capture_preview(handles, initial_choice, state.analyses);
+        state.metadata_rows = djmeta::describe_metadata_diffs(state.analyses);
+        for (const auto& item : state.entries)
+            state.source_labels.push_back(item.input.source_path);
         update_table(state);
+        update_metadata_table(state);
 
         INITCOMMONCONTROLSEX controls = {};
         controls.dwSize = sizeof(controls);
