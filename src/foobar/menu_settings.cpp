@@ -11,11 +11,11 @@
 namespace djmeta_foobar {
 namespace {
 constexpr const char* kDefaults[menu_caption_count] = {
-    "Metadaten normalisieren (Vorschau)...",
-    "Vorbereiten: Singles (Vorschau)...",
-    "Vorbereiten: Alben (Vorschau)...",
-    "Vorbereiten: Livesets (Vorschau)...",
-    "Tracks vorbereiten (Vorschau)...",
+    "Normalize metadata (Preview)...",
+    "Prepare: Singles (Preview)...",
+    "Prepare: Albums (Preview)...",
+    "Prepare: Live Sets (Preview)...",
+    "Prepare Tracks (Preview)...",
 };
 
 // Dedicated, stable GUID per caption. The SDK maps these to the active
