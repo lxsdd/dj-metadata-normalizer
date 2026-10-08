@@ -2,6 +2,7 @@
 
 #include "guid.h"
 #include "preview.h"
+#include "routing_preview.h"
 
 namespace djmeta_foobar {
 namespace {
@@ -15,23 +16,39 @@ contextmenu_group_popup_factory g_context_group(
 class normalizer_context_menu : public contextmenu_item_simple {
 public:
     GUID get_parent() override { return guids::context_group; }
-    unsigned get_num_items() override { return 1; }
+    unsigned get_num_items() override { return 4; }
 
     void get_item_name(unsigned index, pfc::string_base& output) override {
-        if (index != 0) return;
-        output = "Metadaten normalisieren (Vorschau)...";
+        switch (index) {
+        case 0: output = "Metadaten normalisieren (Vorschau)..."; break;
+        case 1: output = "Vorbereiten: Singles (Vorschau)..."; break;
+        case 2: output = "Vorbereiten: Alben (Vorschau)..."; break;
+        case 3: output = "Vorbereiten: Livesets (Vorschau)..."; break;
+        default: break;
+        }
     }
 
     GUID get_item_guid(unsigned index) override {
-        if (index != 0) return pfc::guid_null;
-        return guids::preview_normalization;
+        switch (index) {
+        case 0: return guids::preview_normalization;
+        case 1: return guids::preview_route_singles;
+        case 2: return guids::preview_route_alben;
+        case 3: return guids::preview_route_livesets;
+        default: return pfc::guid_null;
+        }
     }
 
     bool get_item_description(unsigned index, pfc::string_base& output) override {
-        if (index != 0) return false;
-        output =
-            "Analysiert die ausgewählten Tracks mit dem gemeinsamen DJ-Metadata-Normalizer-Regelbestand "
-            "und zeigt Original- und Vorschlagswerte. Diese Entwicklungsstufe schreibt keine Tags.";
+        if (index > 3) return false;
+        if (index == 0) {
+            output =
+                "Analysiert die ausgewählten Tracks mit dem gemeinsamen Normalizer-Regelbestand "
+                "und zeigt Original- und Vorschlagswerte. Schreibt keine Tags.";
+        } else {
+            output =
+                "Berechnet die gewählte historische foobar-File-Operations-Vorlage gegen "
+                "eine SAFE-Metadatenvorschau. Keine Tags, keine Dateiumbenennung, kein Move/Copy.";
+        }
         return true;
     }
 
@@ -41,7 +58,7 @@ public:
         pfc::string_base& output,
         unsigned& display_flags,
         const GUID& caller) override {
-        if (index != 0 || data.get_count() == 0) return false;
+        if (index > 3 || data.get_count() == 0) return false;
         return contextmenu_item_simple::context_get_display(
             index, data, output, display_flags, caller);
     }
@@ -50,11 +67,11 @@ public:
         unsigned index,
         metadb_handle_list_cref data,
         const GUID&) override {
-        if (index != 0 || data.get_count() == 0) return;
+        if (index > 3 || data.get_count() == 0) return;
 
         metadb_handle_list retained = data;
         completion_notify::ptr notify = fb2k::makeCompletionNotify(
-            [retained](unsigned status) {
+            [retained, index](unsigned status) {
                 if (status != metadb_io::load_info_success) {
                     popup_message::g_show(
                         "Die Metadaten konnten nicht vollständig geladen werden. "
@@ -62,7 +79,8 @@ public:
                         "DJ Metadata Normalizer");
                     return;
                 }
-                show_normalization_preview(retained);
+                if (index == 0) show_normalization_preview(retained);
+                else show_legacy_route_preview(retained, index - 1);
             });
 
         metadb_io_v2::get()->load_info_async(
