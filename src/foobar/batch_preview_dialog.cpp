@@ -3,6 +3,7 @@
 #include <SDK/coreDarkMode.h>
 
 #include "batch_preview_dialog.h"
+#include "batch_table_settings.h"
 #include "legacy_routing_profiles.h"
 #include "metadata_adapter.h"
 #include "resource.h"
@@ -11,6 +12,7 @@
 #include "titleformat_planner.h"
 
 #include "djmeta/batch_preview.h"
+#include "djmeta/table_layout.h"
 #include "djmeta/staging.h"
 
 #include <commctrl.h>
@@ -18,6 +20,7 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -40,6 +43,9 @@ struct PreviewState {
     std::wstring cell_buffer;
     fb2k::CCoreDarkModeHooks dark;
     HWND list = nullptr;
+    djmeta::BatchTableLayout layout = djmeta::default_batch_table_layout();
+    // Visible ListView item index -> underlying input row identity.
+    std::vector<std::size_t> view_order;
 };
 
 std::wstring from_utf8(std::string_view text) {
@@ -125,13 +131,35 @@ void verify_snapshot(const PreviewEntry& entry) {
 }
 
 void update_table(PreviewState& state) {
+    // Preserve underlying identities, NOT virtual screen positions, when
+    // a sort or user override causes displayed rows to change order.
+    std::set<std::size_t> selected_entries;
+    if (state.list) {
+        int view_row = -1;
+        while ((view_row = ListView_GetNextItem(state.list, view_row, LVNI_SELECTED)) >= 0) {
+            const auto index = static_cast<std::size_t>(view_row);
+            if (index < state.view_order.size())
+                selected_entries.insert(state.view_order[index]);
+        }
+    }
+
     std::vector<djmeta::BatchPreviewInputRow> inputs;
     inputs.reserve(state.entries.size());
     for (const auto& entry : state.entries) inputs.push_back(entry.input);
     state.table = djmeta::describe_batch_preview(inputs);
+    state.view_order = djmeta::sort_batch_table_view(
+        inputs, state.table, state.layout.sort_column, state.layout.sort_descending);
+
     if (state.list) {
         ListView_SetItemCountEx(state.list, static_cast<int>(state.entries.size()),
             LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+        if (!selected_entries.empty()) {
+            ListView_SetItemState(state.list, -1, 0, LVIS_SELECTED);
+            for (std::size_t i = 0; i < state.view_order.size(); ++i)
+                if (selected_entries.count(state.view_order[i]))
+                    ListView_SetItemState(state.list, static_cast<int>(i),
+                        LVIS_SELECTED, LVIS_SELECTED);
+        }
         InvalidateRect(state.list, nullptr, FALSE);
     }
 }
@@ -179,7 +207,8 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
     } else {
         int index = -1;
         while ((index = ListView_GetNextItem(state.list, index, LVNI_SELECTED)) >= 0)
-            selected.push_back(static_cast<std::size_t>(index));
+            if (static_cast<std::size_t>(index) < state.view_order.size())
+                selected.push_back(state.view_order[static_cast<std::size_t>(index)]);
         if (selected.empty()) {
             MessageBoxW(dialog, L"Select one or more rows first.",
                         L"Prepare Tracks", MB_OK | MB_ICONINFORMATION);
@@ -274,11 +303,13 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         if (!state->list) return FALSE;
 
         ListView_SetExtendedListViewStyle(state->list,
-            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
+            LVS_EX_HEADERDRAGDROP);
         add_column(state->list, 0, L"Source file", 170);
         add_column(state->list, 1, L"Profile", 82);
         add_column(state->list, 2, L"Proposed raw target", 275);
         add_column(state->list, 3, L"Status", 160);
+        state->layout = load_batch_table_layout();
         for (const int id : {IDC_BATCH_PROFILE_NAME, IDC_BATCH_DESTINATION,
                              IDC_BATCH_PATTERN})
             SendDlgItemMessageW(dialog, id, EM_LIMITTEXT, 16384, 0);
@@ -312,8 +343,12 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             header->code == LVN_GETDISPINFOW) {
             auto* info = reinterpret_cast<NMLVDISPINFOW*>(lp);
             if ((info->item.mask & LVIF_TEXT) != 0 && info->item.iItem >= 0) {
-                state->cell_buffer = cell_text(*state,
-                    static_cast<std::size_t>(info->item.iItem), info->item.iSubItem);
+                const auto view_index = static_cast<std::size_t>(info->item.iItem);
+                if (view_index < state->view_order.size())
+                    state->cell_buffer = cell_text(*state,
+                        state->view_order[view_index], info->item.iSubItem);
+                else
+                    state->cell_buffer.clear();
                 info->item.pszText = state->cell_buffer.data();
             }
             return TRUE;
