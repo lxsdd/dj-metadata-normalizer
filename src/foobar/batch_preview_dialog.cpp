@@ -857,6 +857,7 @@ void apply_review_action(HWND dialog, PreviewState& state,
         affected_tracks.insert(track);
     }
 
+    TitleformatBatchEvaluator formatter;
     for (const auto track : affected_tracks) {
         auto& entry = next_entries[track];
         verify_snapshot(entry);
@@ -873,7 +874,7 @@ void apply_review_action(HWND dialog, PreviewState& state,
         entry.input.filesystem_target_checked = false;
         entry.input.cue_dependencies_checked = false;
         if (entry.input.physical_source_qualified) {
-            entry.input.raw_relative_path = evaluate_titleformat_against_canonical(
+            entry.input.raw_relative_path = formatter.evaluate(
                 entry.handle->get_location(), current->info(),
                 entry.staged, entry.route_expression);
         }
@@ -914,6 +915,7 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
     // Transactional: every evaluation must succeed before any displayed
     // batch row is updated. No metadata or filesystem state is modified.
     auto candidate = state.entries;
+    TitleformatBatchEvaluator formatter;
     for (const auto index : selected) {
         PreviewEntry& entry = candidate[index];
         verify_snapshot(entry);
@@ -927,7 +929,7 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
         if (!entry.input.physical_source_qualified) continue;
 
         const auto current = entry.handle->get_info_ref();
-        entry.input.raw_relative_path = evaluate_titleformat_against_canonical(
+        entry.input.raw_relative_path = formatter.evaluate(
             entry.handle->get_location(), current->info(),
             entry.staged, choice.titleformat_expression);
     }
@@ -1105,6 +1107,7 @@ std::vector<PreviewEntry> capture_preview(
             entry.observed_physical_key, entry.observed_source_guard
         });
     const auto checked = djmeta::qualify_physical_selection(evidence);
+    TitleformatBatchEvaluator formatter;
     for (std::size_t i = 0; i < entries.size(); ++i) {
         auto& entry = entries[i];
         if (!checked[i].qualified) {
@@ -1115,7 +1118,7 @@ std::vector<PreviewEntry> capture_preview(
         entry.input.physical_source_qualified = true;
         entry.input.source_physical_key = entry.observed_physical_key;
         const auto current = entry.handle->get_info_ref();
-        entry.input.raw_relative_path = evaluate_titleformat_against_canonical(
+        entry.input.raw_relative_path = formatter.evaluate(
             entry.handle->get_location(), current->info(), entry.staged,
             choice.titleformat_expression);
     }
