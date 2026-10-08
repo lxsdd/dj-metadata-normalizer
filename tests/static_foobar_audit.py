@@ -100,18 +100,21 @@ for label, source, token in [
     ("menu count", route_menu, "get_num_items() override { return 5; }"),
     ("foobar menu DEFAULT_ON", route_menu, "contextmenu_item::DEFAULT_ON"),
     ("foobar menu DEFAULT_OFF", route_menu, "contextmenu_item::DEFAULT_OFF"),
-    ("editable destination", prepare_dialog, "IDC_PREPARE_DESTINATION"),
-    ("editable expression", prepare_dialog, "IDC_PREPARE_PATTERN"),
-    ("read-only batch table", prepare_dialog, "show_batch_preview_dialog(handles, state.choice)"),
-    ("host modal cancel", prepare_dialog, "EndDialog(dialog, IDCANCEL)"),
-    ("host dark mode modal", prepare_dialog, "AddDialogWithControls"),
     ("host cfg Preferences", menu_preferences, "preferences_page_v3"),
     ("host Apply", menu_preferences, "void apply() override"),
     ("host Reset", menu_preferences, "void reset() override"),
     ("host staged changes", menu_preferences, "preferences_state::changed"),
     ("host dark-mode Preferences", menu_preferences, "preferences_state::dark_mode_supported"),
     ("native prefs dialog", resources, "IDD_MENU_PREFERENCES DIALOGEX"),
-    ("native prepare dialog", resources, "IDD_PREPARE_TRACKS DIALOGEX"),
+    ("unified single window", prepare_dialog, "show_batch_preview_dialog(handles, choice)"),
+    ("real metadata proposals", batch_table_dialog, "djmeta::describe_metadata_diffs"),
+    ("metadata and file tab control", batch_table_dialog, "TCN_SELCHANGE"),
+    ("metadata diff view", batch_table_dialog, "IDC_METADATA_LIST"),
+    ("metadata safety", batch_table_dialog, "item.safety"),
+    ("metadata rule provenance", batch_table_dialog, "item.rule_ids"),
+    ("metadata sort", batch_table_dialog, "sort_metadata_diff_rows"),
+    ("source path presentation only", batch_table_dialog, "display_file_path"),
+    ("unified tabs resource", resources, "IDC_BATCH_TABS"),
     ("virtualized batch table resource", resources, "IDD_BATCH_PREVIEW DIALOGEX"),
     ("virtualized ListView", batch_table_dialog, "ListView_SetItemCountEx"),
     ("header drag/drop", batch_table_dialog, "LVS_EX_HEADERDRAGDROP"),
@@ -164,6 +167,8 @@ for ui_file in ("preview.cpp", "routing_preview.cpp", "prepare_dialog.cpp",
             raise SystemExit("STATIC FOOBAR AUDIT FAIL: non-English UI in " +
                              ui_file + ": " + forbidden_ui)
 
+if "IDD_PREPARE_TRACKS DIALOGEX" in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: obsolete two-dialog wizard remains")
 if "contextmenu_item::FORCE_OFF" in route_menu:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: host visibility disabled")
 for token in [
