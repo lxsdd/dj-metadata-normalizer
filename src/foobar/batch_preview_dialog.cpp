@@ -1011,14 +1011,10 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
             header->code == LVN_ITEMCHANGED) {
             const auto* changed = reinterpret_cast<const NMLISTVIEW*>(lp);
-            if (!state->updating_track_selection && changed->iItem >= 0 &&
-                (changed->uNewState & LVIS_SELECTED) != 0 &&
-                (changed->uOldState & LVIS_SELECTED) == 0) {
-                const auto row = static_cast<std::size_t>(changed->iItem);
-                if (row < state->track_view_order.size()) {
-                    state->selected_track_index = state->track_view_order[row];
-                    update_metadata_table(*state);
-                }
+            if (const auto track = native_selected_track_change(
+                    *changed, state->track_view_order, state->updating_track_selection)) {
+                state->selected_track_index = *track;
+                update_metadata_table(*state);
             }
             return TRUE;
         }

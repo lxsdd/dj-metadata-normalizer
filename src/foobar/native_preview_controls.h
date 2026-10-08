@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <cstddef>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -41,6 +42,21 @@ inline PreviewCommand native_preview_command(UINT message, WPARAM wp) {
         }
     }
     return PreviewCommand::None;
+}
+
+// Resolve the actual ListView LVN_ITEMCHANGED notification. Synthetic
+// view-row events and refresh-generated changes must not retarget reviews.
+inline std::optional<std::size_t> native_selected_track_change(
+    const NMLISTVIEW& change, const std::vector<std::size_t>& view_order,
+    bool refreshing) {
+    if (refreshing || change.iItem < 0 ||
+        (change.uChanged & LVIF_STATE) == 0 ||
+        (change.uNewState & LVIS_SELECTED) == 0 ||
+        (change.uOldState & LVIS_SELECTED) != 0)
+        return std::nullopt;
+    const auto row = static_cast<std::size_t>(change.iItem);
+    if (row >= view_order.size()) return std::nullopt;
+    return view_order[row];
 }
 
 inline std::vector<std::size_t> selected_native_view_ids(

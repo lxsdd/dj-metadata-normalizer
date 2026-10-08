@@ -17,7 +17,20 @@ void check(bool value, const char* message) {
 }
 djmeta_foobar::PreviewCommand last_command = djmeta_foobar::PreviewCommand::None;
 int command_notifications = 0;
-INT_PTR CALLBACK test_dialog_proc(HWND, UINT message, WPARAM wp, LPARAM) {
+std::vector<std::size_t> active_track_order;
+std::size_t notified_track_identity = static_cast<std::size_t>(-1);
+bool rebuilding_master = false;
+INT_PTR CALLBACK test_dialog_proc(HWND, UINT message, WPARAM wp, LPARAM lp) {
+    if (message == WM_NOTIFY) {
+        const auto* hdr = reinterpret_cast<const NMHDR*>(lp);
+        if (hdr && hdr->idFrom == IDC_METADATA_TRACK_LIST &&
+            hdr->code == LVN_ITEMCHANGED) {
+            const auto* change = reinterpret_cast<const NMLISTVIEW*>(lp);
+            if (const auto track = djmeta_foobar::native_selected_track_change(
+                    *change, active_track_order, rebuilding_master))
+                notified_track_identity = *track;
+        }
+    }
     const auto command = djmeta_foobar::native_preview_command(message, wp);
     if (command != djmeta_foobar::PreviewCommand::None) {
         last_command = command;
@@ -153,16 +166,29 @@ int main() {
     ListView_SetItemState(master, 0, LVIS_SELECTED, LVIS_SELECTED);
     ListView_SetItemState(master, 2, LVIS_SELECTED, LVIS_SELECTED);
     const std::vector<std::size_t> initial_order{13, 5, 9};
+    active_track_order = initial_order;
+    // The ListView fires real LVN_ITEMCHANGED notifications as its selection
+    // changes. The dialog callback uses the production identity resolver.
+    ListView_SetItemState(master, 2, 0, LVIS_SELECTED);
+    ListView_SetItemState(master, 2, LVIS_SELECTED, LVIS_SELECTED);
+    check(notified_track_identity == 9,
+          "real LVN_ITEMCHANGED notification identifies source 9");
     const auto selected = djmeta_foobar::selected_native_view_ids(master, initial_order);
     check(selected == std::vector<std::size_t>({13, 9}),
           "multiple real listview selections resolve to stable track identities");
     const std::vector<std::size_t> sorted_order{9, 13, 5};
+    active_track_order = sorted_order;
+    rebuilding_master = true;
     djmeta_foobar::restore_native_view_selection(master, sorted_order, selected, 9);
+    rebuilding_master = false;
     check(djmeta_foobar::selected_native_view_ids(master, sorted_order) ==
           std::vector<std::size_t>({9, 13}),
           "sort preserves all selected track identities in owner-data listview");
     check((ListView_GetItemState(master, 0, LVIS_FOCUSED) & LVIS_FOCUSED) != 0,
           "focused track survives independently from sorted row identity");
+    ListView_SetItemState(master, 2, LVIS_SELECTED, LVIS_SELECTED);
+    check(notified_track_identity == 5,
+          "real LVN_ITEMCHANGED after sorting resolves new source, not stale view row");
     HWND detail = GetDlgItem(dialog, IDC_METADATA_LIST);
     check(ListView_SetItemCountEx(detail, 3, 0) != FALSE,
           "production virtual proposal grid accepts three rows");

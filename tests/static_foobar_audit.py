@@ -111,7 +111,7 @@ for label, source, token in [
     ("one row per physical selected track", batch_table_dialog, "djmeta::summarize_track_changes"),
     ("track list as production widget", batch_table_dialog, "IDC_METADATA_TRACK_LIST"),
     ("track master selection", batch_table_dialog, "LVN_ITEMCHANGED"),
-    ("selection resolves source identity", batch_table_dialog, "state->track_view_order[row]"),
+    ("selection resolves source identity", batch_table_dialog, "native_selected_track_change("),
     ("track-specific detail", batch_table_dialog, "djmeta::selected_track_diffs"),
     ("music versus extended focus", batch_table_dialog, "MetadataFocus::Music"),
     ("extended/custom fields reachable", batch_table_dialog, "MetadataFocus::All"),
@@ -249,6 +249,8 @@ if '{IDC_METADATA_TRACK_FILTER_LABEL, IDC_METADATA_TRACK_FILTER}' not in native_
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: native status filter alignment not wired")
 if 'native_preview_command(message, wp)' not in batch_table_dialog or 'native_preview_command(message, wp)' not in gui_test:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual production event decoder not shared with resource-backed GUI test")
+if 'native_selected_track_change(' not in batch_table_dialog or 'native_selected_track_change(' not in gui_test:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual track selection notification not exercised with shared event adapter")
 if 'selected_native_view_ids(' not in batch_table_dialog or 'restore_native_view_selection(' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: production sort/review does not use tested stable selection adapter")
 if 'project_review_decisions(' not in batch_table_dialog or 'verify_snapshot(entry)' not in batch_table_dialog:
