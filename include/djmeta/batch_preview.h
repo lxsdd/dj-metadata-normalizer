@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace djmeta {
@@ -31,6 +32,11 @@ struct BatchPreviewTable {
     std::size_t raw_collision_items = 0;
     std::size_t unqualified_rows = 0;
 };
+
+// Conservative lexical check of raw foobar Title Formatting output only.
+// True means only that the relative fragment has no obvious Windows path
+// traps; it is NOT proof of final foobar File Operations sanitization.
+bool raw_relative_path_lexically_safe(std::string_view raw);
 
 // Pure read-only table description; no filesystem I/O, no OS path identity
 // assumptions, no use of this result as an executor approval token.
