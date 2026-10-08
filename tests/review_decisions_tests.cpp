@@ -150,6 +150,57 @@ int main() {
           explicitReview.explicitly_accepted == 1,
           "explicit REVIEW lyric replacement remains supported");
 
+    // Malformed legacy source bytes stay immutable, but malformed new text
+    // cannot cross accepted or manually entered review boundaries.
+    const MetadataDocument malformedOriginal{{
+        {"TITLE", {" Original "}},
+        {"COMMENT", {std::string("Old \xC2", 5)}}
+    }};
+    AnalysisResult malformedAnalysis;
+    malformedAnalysis.input_fingerprint = fingerprint(malformedOriginal);
+    Proposal bad;
+    bad.field_index = 0;
+    bad.value_index = 0;
+    bad.field = "TITLE";
+    bad.original_value = " Original ";
+    bad.proposed_value = std::string("Bad \xED\xA0\x80", 7);
+    bad.safety = SafetyClass::Safe;
+    malformedAnalysis.proposals = {bad};
+    should_reject([&]{ (void)project_review_decisions(malformedOriginal, malformedAnalysis); },
+                  "invalid SAFE postimage must be rejected");
+    for (const auto& bad_text : {
+        std::string("New\nline"),
+        std::string("New\0hidden", 10)}) {
+        bad.proposed_value = bad_text;
+        malformedAnalysis.proposals = {bad};
+        should_reject([&]{
+            (void)project_review_decisions(malformedOriginal, malformedAnalysis);
+        }, "forged SAFE multiline/NUL postimage entered review");
+    }
+    bad.proposed_value = std::string("Bad \xED\xA0\x80", 7);
+    bad.safety = SafetyClass::Review;
+    malformedAnalysis.proposals = {bad};
+    should_reject([&]{
+        (void)project_review_decisions(malformedOriginal, malformedAnalysis,
+             {ReviewDecision{ReviewAction::Accept, ""}});
+    }, "explicit Accept cannot authorize invalid UTF-8 postimage");
+    const auto ignored = project_review_decisions(malformedOriginal, malformedAnalysis,
+         {ReviewDecision{ReviewAction::Reject, ""}});
+    check(ignored.document == malformedOriginal &&
+          ignored.explicitly_rejected == 1,
+          "reject malformed proposal preserves byte-exact legacy source");
+    bad.proposed_value = "Repaired";
+    malformedAnalysis.proposals = {bad};
+    should_reject([&]{
+        (void)project_review_decisions(malformedOriginal, malformedAnalysis,
+             {ReviewDecision{ReviewAction::ManualValue, std::string("Bad \x80", 5)}});
+    }, "invalid UTF-8 manual replacement accepted");
+    const auto international = project_review_decisions(malformedOriginal, malformedAnalysis,
+         {ReviewDecision{ReviewAction::ManualValue, "Tiësto"}});
+    check(international.document.fields[0].values[0] == "Tiësto" &&
+          international.document.fields[1] == malformedOriginal.fields[1],
+          "valid Unicode names accepted without changing unrelated malformed values");
+
     AnalysisResult none;
     none.input_fingerprint = fingerprint(original);
     const auto zero = project_review_decisions(original, none);

@@ -123,6 +123,39 @@ void test_defense_in_depth_structural_proposals() {
     } catch (const std::invalid_argument&) {}
 }
 
+void test_malformed_utf8_safe_boundary() {
+    const djmeta::MetadataDocument original{{
+        {"TITLE", {"  Old Title  "}},
+        {"COMMENT", {std::string("Old \xC2", 5)}}
+    }};
+    djmeta::AnalysisResult a;
+    a.input_fingerprint = djmeta::fingerprint(original);
+    a.proposals = {proposal(0, "TITLE", "  Old Title  ",
+                           "Old Title", djmeta::SafetyClass::Safe)};
+    const auto pass = djmeta::stage_safe_only(original, a);
+    require(pass.document.fields[0].values[0] == "Old Title" &&
+            pass.document.fields[1] == original.fields[1],
+            "valid SAFE changes preserve unrelated malformed legacy bytes");
+    a.proposals[0].proposed_value = std::string("New \xC0\xAF", 6);
+    try { (void)djmeta::stage_safe_only(original, a);
+        require(false, "forged SAFE invalid UTF-8 postimage accepted");
+    } catch (const std::invalid_argument&) {}
+    for (const auto& bad_text : {
+        std::string("New\nline"),
+        std::string("New\0hidden", 10)}) {
+        a.proposals[0].proposed_value = bad_text;
+        try {
+            (void)djmeta::stage_safe_only(original, a);
+            require(false, "forged SAFE control or multiline postimage accepted");
+        } catch (const std::invalid_argument&) {}
+    }
+    a.proposals = {proposal(1, "COMMENT", original.fields[1].values[0].c_str(),
+                           "Old", djmeta::SafetyClass::Safe)};
+    try { (void)djmeta::stage_safe_only(original, a);
+        require(false, "partial SAFE edit of malformed source accepted");
+    } catch (const std::invalid_argument&) {}
+}
+
 void test_true_multivalue_and_duplicate_fields() {
     const djmeta::MetadataDocument input{{
         {"ARTIST", {" A ", " B "}},
@@ -147,5 +180,6 @@ int main() {
     test_identity_guards();
     test_true_multivalue_and_duplicate_fields();
     test_defense_in_depth_structural_proposals();
+    test_malformed_utf8_safe_boundary();
     std::cout << "PASS: SAFE-only staging four suites\n";
 }

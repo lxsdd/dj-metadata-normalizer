@@ -1,6 +1,7 @@
 #include "djmeta/normalizer.h"
 #include "djmeta/rule_loader.h"
 #include "djmeta/rules_snapshot.h"
+#include "djmeta/structural_guard.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -49,6 +50,31 @@ djmeta::Rule unicode_whitespace_rule() {
         "Map Unicode White_Space to ASCII space.",
         "builtin", ""
     };
+}
+
+void test_safe_scalar_structural_byte_guards() {
+    require(djmeta::safe_scalar_metadata_field("TITLE", " A Title "),
+            "single-line ordinary TITLE remains eligible");
+    require(!djmeta::safe_scalar_metadata_field("TITLE", std::string("A\0B", 3)) &&
+            !djmeta::safe_scalar_metadata_field("TITLE", "A\nB"),
+            "embedded zero or line break must never be classed SAFE");
+    require(!djmeta::safe_scalar_metadata_field("CUESHEET", "FILE track.mp3 MP3") &&
+            !djmeta::safe_scalar_metadata_field("LYRICS", "one line"),
+            "structured cue and lyrics remain protected");
+}
+
+void test_shared_metadata_utf8_validation() {
+    require(djmeta::valid_utf8_metadata_text("Tiësto — 東京"),
+            "valid international UTF-8 accepted");
+    require(djmeta::valid_utf8_metadata_text(""),
+            "empty string itself valid UTF-8, deletion requires separate approval");
+    for (const auto& malformed : {
+        std::string("\xC2", 1), std::string("\x80", 1),
+        std::string("\xC0\xAF", 2), std::string("\xED\xA0\x80", 3),
+        std::string("\xF4\x90\x80\x80", 4)}) {
+        require(!djmeta::valid_utf8_metadata_text(malformed),
+                "invalid UTF-8 sequence rejected by shared validator");
+    }
 }
 
 void test_rules_file_snapshot_revision_and_source_identity() {
@@ -456,6 +482,8 @@ void test_fingerprint_contract() {
 int main() {
     test_preview_is_immutable_and_ordered();
     test_rules_file_snapshot_revision_and_source_identity();
+    test_shared_metadata_utf8_validation();
+    test_safe_scalar_structural_byte_guards();
     test_unicode_whitespace_schema_v2();
     test_structured_cuesheet_and_multiline_fields_are_never_flattened();
     test_invalid_utf8_never_produces_generic_safe_whitespace_changes();
