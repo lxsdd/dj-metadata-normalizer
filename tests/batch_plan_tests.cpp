@@ -138,6 +138,47 @@ void test_batch_overwrite_once_and_target_guard() {
             "per-item overwrite approval must also be guarded by plan fingerprint");
 }
 
+void test_many_individual_overwrite_approvals_are_indexed() {
+    // Realistic large DJ library selection: each target already exists and
+    // has its own inspected identity guard and explicit per-file approval.
+    // The test is semantic, not a timing assertion (CI runners vary).
+    constexpr int kTracks = 15000;
+    std::vector<djmeta::FilePlanItem> items;
+    items.reserve(kTracks);
+    for (int i = 0; i < kTracks; ++i) {
+        auto item = audio("library-" + std::to_string(i));
+        item.target_presence = djmeta::TargetPresence::Existing;
+        item.target_guard = "inspected-identity-" + std::to_string(i);
+        items.push_back(std::move(item));
+    }
+    const auto first = djmeta::review_batch_plan(items);
+    require(first.blocked == 0 && first.requires_overwrite == kTracks &&
+            !first.ready_to_apply,
+            "large batch with existing destinations requires explicit approvals");
+    djmeta::BatchApproval approval;
+    approval.reviewed_plan_fingerprint = first.plan_fingerprint;
+    approval.individually_approved_physical_ids.reserve(kTracks);
+    for (int i = 0; i < kTracks; ++i)
+        approval.individually_approved_physical_ids.push_back(
+            "library-" + std::to_string(i));
+    const auto accepted = djmeta::review_batch_plan(items, &approval);
+    require(accepted.ready_to_apply && accepted.blocked == 0 &&
+            accepted.requires_overwrite == kTracks,
+            "15000 individually approved targets must be uniformly plannable");
+    for (const auto& decision : accepted.decisions)
+        require(decision.status == djmeta::PlanStatus::Ready &&
+                decision.will_replace_existing_target,
+                "each selected overwrite must have its own approved target");
+    // One missing member of the indexed set cannot inherit neighboring consent.
+    approval.individually_approved_physical_ids.pop_back();
+    const auto partial = djmeta::review_batch_plan(items, &approval);
+    require(!partial.ready_to_apply && partial.blocked == 0 &&
+            partial.decisions.back().status ==
+                djmeta::PlanStatus::NeedsOverwriteApproval &&
+            !partial.decisions.back().will_replace_existing_target,
+            "last unapproved target must not be covered by earlier approvals");
+}
+
 void test_missing_target_guard_and_no_inspection() {
     auto a = audio("A");
     a.target_presence = djmeta::TargetPresence::Unchecked;
@@ -666,6 +707,7 @@ int main() {
     test_ready_and_immutable();
     test_batch_overwrite_once_and_target_guard();
     test_large_batch_one_confirmation();
+    test_many_individual_overwrite_approvals_are_indexed();
     test_missing_target_guard_and_no_inspection();
     test_new_target_after_clean_review_requires_new_consent();
     test_intra_batch_conflicts_cannot_be_overridden();
