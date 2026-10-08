@@ -1,4 +1,5 @@
 #include "djmeta/table_layout.h"
+#include "djmeta/review_grid_layout.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -96,6 +97,58 @@ void test_sort_stable_and_inputs_immutable() {
     expect(rows[0].source_path == "z.flac" && rows[1].source_path == "B.flac",
            "sort must not mutate data or index identities");
 }
+void test_review_grid_layouts() {
+    const auto track_defaults = djmeta::default_review_grid_layout<4>({150, 48, 48, 48});
+    const auto detail_defaults = djmeta::default_review_grid_layout<5>({80, 105, 105, 60, 75});
+    auto tracks = track_defaults;
+    tracks.order = {3, 1, 0, 2};
+    tracks.widths = {165, 48, 80, 49};
+    tracks.sort_column = 2;
+    tracks.sort_descending = true;
+    expect(djmeta::set_review_column_visible(tracks, 3, false),
+           "track columns can be hidden");
+    const auto track_saved = djmeta::serialize_review_grid_layout(tracks);
+    const auto track_loaded = djmeta::parse_review_grid_layout(track_saved, track_defaults);
+    expect(track_loaded.order == tracks.order && track_loaded.widths == tracks.widths &&
+           track_loaded.visible_mask == tracks.visible_mask &&
+           track_loaded.sort_column == 2 && track_loaded.sort_descending,
+           "track layout roundtrips order, width, visibility and sort");
+    auto detail = detail_defaults;
+    detail.order = {4, 2, 0, 1, 3};
+    detail.sort_column = 4;
+    detail.visible_mask = 1u << 4;
+    const auto detail_saved = djmeta::serialize_review_grid_layout(detail);
+    expect(djmeta::parse_review_grid_layout(detail_saved, detail_defaults).order == detail.order,
+           "five-column detail layout roundtrip");
+    expect(!djmeta::set_review_column_visible(detail, 4, false),
+           "cannot hide last visible column");
+    expect(detail.visible_mask == (1u << 4),
+           "last visible column remains visible");
+    expect(!djmeta::set_review_column_visible(detail, 9, true),
+           "out-of-range visibility change rejected");
+    detail.order = {1, 1, 2, 3, 4};
+    expect(!djmeta::valid_review_grid_layout(detail),
+           "duplicate detailed column identity rejected");
+    for (const auto bad : {
+         "v2|0,1,2,3|150,48,48,48|15|0|0",
+         "v1|0,0,2,3|150,48,48,48|15|0|0",
+         "v1|0,1,2,3|150,48,48,48|0|0|0",
+         "v1|0,1,2,3|150,48,48,48|15|4|0",
+         "v1|0,1,2,3|150,48,48,48|15|0|3",
+         "v1|0,1,2,3|150,48,48,48|15|0|0|extra",
+         "v1|0,1,2,3|150,48,48,48|15|0|-1",
+         "v1|0,1,2,3|150,48,0,48|15|0|0"
+    }) {
+        const auto fallback = djmeta::parse_review_grid_layout(bad, track_defaults);
+        expect(fallback.order == track_defaults.order &&
+               fallback.widths == track_defaults.widths &&
+               fallback.visible_mask == track_defaults.visible_mask,
+               "review grid malformed input returns untouched defaults");
+    }
+    expect(djmeta::parse_review_grid_layout(track_saved, detail_defaults).order ==
+               detail_defaults.order,
+           "four-column config cannot overwrite five-column detail layout");
+}
 void test_large_virtual_mapping() {
     std::vector<djmeta::BatchPreviewInputRow> rows;
     for (int i=0;i<20000;i++)
@@ -118,6 +171,7 @@ void test_large_virtual_mapping() {
 
 int main() {
     test_layout_roundtrip_and_invalid();
+    test_review_grid_layouts();
     test_sort_stable_and_inputs_immutable();
     test_large_virtual_mapping();
     std::cout << "PASS: layout roundtrip, strict validation, stable virtual sort of 20,000 rows\n";
