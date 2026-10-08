@@ -101,6 +101,21 @@ int main() {
     check(contains(observed.rows[0], "RAW_TARGET_ALIASES_SOURCE") &&
           !contains(observed.rows[0], "RAW_TARGET_EXISTS"),
           "raw candidate hardlink alias must not resemble an ordinary overwrite");
+    a.raw_target_physical_key = "volume1:another-source";
+    b = sample("b.mp3");
+    b.source_physical_key = a.raw_target_physical_key;
+    observed = djmeta::describe_batch_preview({a, b});
+    check(contains(observed.rows[0], "RAW_TARGET_IS_BATCH_SOURCE"),
+          "raw candidate must not target a different selected physical source");
+    b.source_physical_key = "volume1:third-source";
+    b.raw_target_presence = djmeta::RawTargetPresence::Existing;
+    b.raw_target_physical_key = a.raw_target_physical_key;
+    b.raw_target_guard = "other-observation-of-shared-file";
+    observed = djmeta::describe_batch_preview({a, b});
+    check(contains(observed.rows[0], "RAW_TARGET_SHARED_PHYSICAL_ID") &&
+          contains(observed.rows[1], "RAW_TARGET_SHARED_PHYSICAL_ID"),
+          "two distinct raw candidates with one physical ID must both be flagged");
+
     a.raw_target_presence = djmeta::RawTargetPresence::Unqualified;
     observed = djmeta::describe_batch_preview({a});
     check(contains(observed.rows[0], "RAW_TARGET_PROBE_UNQUALIFIED"),
