@@ -26,9 +26,9 @@ int main() {
     };
     const RecordingIdentity same{
         "a track", "an artist", "producer x",
-        MixKind::Extended, "US ABC 26 00001", 403000
+        MixKind::Extended, "USABC2600001", 403000
     };
-    // Note: ISRC separators are tested with the comparison tokenizer.
+    // ISRC punctuation/spacing is ignored without changing the raw tag.
     const Candidate strong{"beatport", "128", same};
     const auto best = compare(original, strong);
     expect(best.decision == MatchDecision::Suggested &&
@@ -105,6 +105,10 @@ int main() {
            ranked[3].decision == MatchDecision::Rejected,
            "rank by semantic disposition before numerical evidence score");
 
+    expect(normalized_isrc("us-abc-26-00001") == "USABC2600001" &&
+           normalized_isrc("usabc2600001") == "USABC2600001" &&
+           normalized_isrc("US/ABC/26/00001").empty(),
+           "ISRC token matching accepts optional separators but rejects bad codes");
     expect(comparable("  A --B \t C! ") == "a b c" &&
            comparable("Björk") == "björk" &&
            comparable(std::string("A\0B", 3)).empty(),
