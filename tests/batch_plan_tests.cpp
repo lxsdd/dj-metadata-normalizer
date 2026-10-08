@@ -681,6 +681,55 @@ void test_same_canonical_key_but_different_raw_path_is_not_noop() {
             "exact same source and target path remains a no-op");
 }
 
+void test_embedded_nul_in_plan_identity_fails_closed() {
+    const auto sample = audio("nul-input");
+    const auto inject_nul = [](std::string& field) {
+        field.insert(field.size() / 2, 1, '\0');
+    };
+    for (int field_index = 0; field_index < 14; ++field_index) {
+        auto item = sample;
+        std::string* fields[]{
+            &item.physical_id, &item.source_path, &item.source_key,
+            &item.target_path, &item.target_key, &item.associated_audio_id,
+            &item.metadata_fingerprint, &item.planned_metadata_fingerprint,
+            &item.ruleset_revision, &item.routing_profile,
+            &item.naming_expression, &item.target_guard,
+            &item.cue_source_fingerprint, &item.cue_postimage_fingerprint
+        };
+        inject_nul(*fields[field_index]);
+        const auto review = djmeta::review_batch_plan({item});
+        require(review.blocked == 1 && !review.ready_to_apply &&
+                has_reason(review.decisions[0], "EMBEDDED_NUL_IN_PLAN_IDENTITY"),
+                "zero-terminated native identity must not accept embedded NUL");
+        const djmeta::BatchApproval approval{review.plan_fingerprint, true};
+        const auto approved = djmeta::review_batch_plan({item}, &approval);
+        require(approved.blocked == 1 && !approved.ready_to_apply,
+                "blanket overwrite approval cannot override embedded NUL");
+    }
+
+    auto tag_only = sample;
+    tag_only.action = djmeta::FileAction::None;
+    tag_only.target_key.clear();
+    tag_only.target_path.clear();
+    inject_nul(tag_only.source_path);
+    const auto tag_review = djmeta::review_batch_plan({tag_only});
+    require(tag_review.blocked == 1 && !tag_review.ready_to_apply &&
+            has_reason(tag_review.decisions[0], "EMBEDDED_NUL_IN_PLAN_IDENTITY"),
+            "tag-only early-exit must not bypass embedded NUL guard");
+
+    auto noop = sample;
+    noop.target_path = noop.source_path;
+    noop.target_key = noop.source_key;
+    inject_nul(noop.source_key);
+    const auto no_op_review = djmeta::review_batch_plan({noop});
+    require(no_op_review.blocked == 1 && !no_op_review.ready_to_apply &&
+            has_reason(no_op_review.decisions[0], "EMBEDDED_NUL_IN_PLAN_IDENTITY"),
+            "identical source and destination must not hide malformed identity");
+
+    const auto normal = djmeta::review_batch_plan({sample});
+    require(normal.ready_to_apply, "valid non-NUL source remains plannable");
+}
+
 void test_noop_and_missing_ids() {
     auto a = audio("A");
     a.target_key = a.source_key;
@@ -720,6 +769,7 @@ int main() {
     test_cue_rewrite_only_on_external_cue_items();
     test_metadata_only_requires_physical_identity();
     test_same_canonical_key_but_different_raw_path_is_not_noop();
+    test_embedded_nul_in_plan_identity_fails_closed();
     test_noop_and_missing_ids();
     test_unknown_plan_enum_values_fail_closed();
     test_companion_files_need_explicit_or_qualified_policy();

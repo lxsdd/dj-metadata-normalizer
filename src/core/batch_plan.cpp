@@ -86,6 +86,23 @@ bool valid_cue_state(CueLinkState value) {
     }
 }
 
+// Native host file APIs and legacy metadata libraries may use zero-
+// terminated strings. Never let an embedded zero truncate an approved
+// source/target path, key, rule identity or projected content guard.
+bool contains_embedded_nul(const FilePlanItem& item) {
+    const std::string* fields[] = {
+        &item.physical_id, &item.source_path, &item.source_key,
+        &item.target_path, &item.target_key, &item.associated_audio_id,
+        &item.metadata_fingerprint, &item.planned_metadata_fingerprint,
+        &item.ruleset_revision, &item.routing_profile,
+        &item.naming_expression, &item.target_guard,
+        &item.cue_source_fingerprint, &item.cue_postimage_fingerprint
+    };
+    for (const auto* field : fields)
+        if (field->find('\0') != std::string::npos) return true;
+    return false;
+}
+
 bool active_file_action(const FilePlanItem& item) {
     return item.action != FileAction::None;
 }
@@ -164,6 +181,9 @@ BatchPlanReview review_batch_plan(
             ++review.blocked;
             continue;
         }
+
+        if (contains_embedded_nul(item))
+            block(decision, "EMBEDDED_NUL_IN_PLAN_IDENTITY");
 
         if (item.cue_references_will_change && item.role != FileRole::ExternalCue)
             block(decision, "CUE_REWRITE_ON_NON_CUE_ITEM");
