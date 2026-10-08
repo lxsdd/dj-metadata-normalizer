@@ -38,4 +38,27 @@ struct ExternalCueInventory {
 // resolution, exact metadata/CUE fingerprints and the batch preflight gate.
 ExternalCueInventory inspect_external_cue(std::string_view raw_bytes);
 
+// A user/host-approved mapping of an exact existing FILE reference to a new
+// path, identified by its zero-based occurrence in the cue inventory.
+struct CueReferenceRename {
+    std::size_t reference_index = 0;
+    std::string expected_filename;
+    std::string proposed_filename;
+};
+
+struct ExternalCueRewritePreview {
+    // eligible means syntactically sound, NOT permission to write.
+    bool eligible = false;
+    bool changed = false;
+    std::string proposed_bytes;
+    std::vector<std::string> diagnostics;
+};
+
+// Generate an immutable in-memory postimage, preserving all other CUE bytes.
+// The host must independently qualify audio identity, target path equivalence,
+// source byte fingerprint and the full batch before any execution.
+ExternalCueRewritePreview preview_external_cue_reference_rewrite(
+    std::string_view source_bytes,
+    const std::vector<CueReferenceRename>& renames);
+
 } // namespace djmeta
