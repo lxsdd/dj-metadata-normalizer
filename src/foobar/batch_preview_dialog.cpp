@@ -5,6 +5,7 @@
 #include "batch_preview_dialog.h"
 #include "batch_table_settings.h"
 #include "legacy_routing_profiles.h"
+#include "native_preview_controls.h"
 #include "metadata_adapter.h"
 #include "resource.h"
 #include "routing_preview.h"
@@ -134,7 +135,7 @@ bool valid_user_text(std::wstring_view text) {
 }
 
 RoutePreviewChoice read_choice(HWND window) {
-    const std::wstring name = read_control(window, IDC_BATCH_PROFILE_NAME);
+    const std::wstring name = read_control(window, IDC_BATCH_PROFILE_PICKER);
     const std::wstring root = read_control(window, IDC_BATCH_DESTINATION);
     const std::wstring script = read_control(window, IDC_BATCH_PATTERN);
     if (!valid_user_text(name) || !valid_user_text(root) ||
@@ -148,8 +149,6 @@ RoutePreviewChoice read_choice(HWND window) {
 void load_profile(HWND window, int index) {
     if (index >= 0 && static_cast<std::size_t>(index) < legacy_move_route_count) {
         const auto& route = legacy_move_routes[index];
-        SetDlgItemTextW(window, IDC_BATCH_PROFILE_NAME,
-                        from_utf8(route.name).c_str());
         SetDlgItemTextW(window, IDC_BATCH_DESTINATION,
                         from_utf8(route.destination_root).c_str());
         SetDlgItemTextW(window, IDC_BATCH_PATTERN,
@@ -336,9 +335,9 @@ void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_FILTER_LABEL),
         metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.list, metadata ? SW_HIDE : SW_SHOW);
-    for (int id : {IDC_BATCH_ROUTE_LABEL, IDC_BATCH_NAME_LABEL,
+    for (int id : {IDC_BATCH_ROUTE_LABEL,
                    IDC_BATCH_DEST_LABEL, IDC_BATCH_PATTERN_LABEL,
-                   IDC_BATCH_PROFILE_PICKER, IDC_BATCH_PROFILE_NAME,
+                   IDC_BATCH_PROFILE_PICKER,
                    IDC_BATCH_DESTINATION, IDC_BATCH_PATTERN,
                    IDC_BATCH_APPLY_SELECTED, IDC_BATCH_APPLY_ALL}) {
         ShowWindow(GetDlgItem(dialog,id), metadata ? SW_HIDE : SW_SHOW);
@@ -519,7 +518,7 @@ void capture_resize_layout(PreviewState& state) {
         const int id = GetDlgCtrlID(control);
         layout.stretch_width =
             id == IDC_BATCH_LIST || id == IDC_METADATA_LIST ||
-            id == IDC_BATCH_TABS || id == IDC_BATCH_PROFILE_NAME ||
+            id == IDC_BATCH_TABS || id == IDC_BATCH_PROFILE_PICKER ||
             id == IDC_BATCH_DESTINATION || id == IDC_BATCH_PATTERN ||
             (id == -1 && layout.original.right >
              current.initial_client_width - 24);
@@ -704,13 +703,15 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             !SetWindowSubclass(batch_header, batch_header_proc, 1,
                 reinterpret_cast<DWORD_PTR>(state)))
             throw std::runtime_error("Unable to attach batch column menu.");
-        for (const int id : {IDC_BATCH_PROFILE_NAME, IDC_BATCH_DESTINATION,
-                             IDC_BATCH_PATTERN})
+        for (const int id : {IDC_BATCH_DESTINATION, IDC_BATCH_PATTERN})
             SendDlgItemMessageW(dialog, id, EM_LIMITTEXT, 16384, 0);
-        for (const wchar_t* profile : {L"Singles", L"Albums", L"Live Sets", L"Custom"})
+        SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_LIMITTEXT, 16384, 0);
+        for (const auto& profile : legacy_move_routes) {
+            const auto name = from_utf8(profile.name); // user-owned preset names stay exact
             SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_ADDSTRING,
-                0, reinterpret_cast<LPARAM>(profile));
-        int initial_profile = 3;
+                0, reinterpret_cast<LPARAM>(name.c_str()));
+        }
+        int initial_profile = -1;
         for (std::size_t i = 0; i < legacy_move_route_count; ++i) {
             const auto& profile = legacy_move_routes[i];
             if (state->current_choice.display_name == profile.name &&
@@ -722,7 +723,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         }
         SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_SETCURSEL,
                             static_cast<WPARAM>(initial_profile), 0);
-        SetDlgItemTextW(dialog, IDC_BATCH_PROFILE_NAME,
+        SetDlgItemTextW(dialog, IDC_BATCH_PROFILE_PICKER,
                         from_utf8(state->current_choice.display_name).c_str());
         SetDlgItemTextW(dialog, IDC_BATCH_DESTINATION,
                         from_utf8(state->current_choice.destination_root).c_str());
@@ -733,6 +734,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         update_master_table(*state);
         update_metadata_table(*state);
         show_preview_page(dialog, *state, true);
+        align_native_preview_form(dialog);
         capture_resize_layout(*state);
         return TRUE;
         } catch (const std::exception&) {
@@ -755,6 +757,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     }
     if (message == WM_SIZE && state->initial_client_width > 0) {
         resize_batch_dialog(*state, LOWORD(lp), HIWORD(lp));
+        align_native_preview_form(dialog);
         return TRUE;
     }
 
@@ -920,6 +923,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             dimensions->right - dimensions->left,
             dimensions->bottom - dimensions->top,
             SWP_NOZORDER | SWP_NOACTIVATE);
+        align_native_preview_form(dialog);
         return TRUE;
     }
 

@@ -223,4 +223,19 @@ if "CreateFileW" not in rules_runtime or "GENERIC_READ" not in rules_runtime:
 if "CREATE_ALWAYS" in rules_runtime or "OPEN_ALWAYS" in rules_runtime:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: rules runtime contains a file-creation path")
 
+# The GUI contract is backed by an actual Windows HWND runtime test.
+# Static checks here only verify that production uses the tested adapter.
+native_controls = (foobar / "native_preview_controls.h").read_text(encoding="utf-8")
+gui_test = (root / "tests" / "native_preview_controls_tests.cpp").read_text(encoding="utf-8")
+if 'IDC_BATCH_PROFILE_NAME' in resources or 'IDC_BATCH_NAME_LABEL' in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: duplicate route profile input still instantiated")
+if 'CBS_DROPDOWN | CBS_AUTOHSCROLL' not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: routing combo is not editable")
+if 'read_control(window, IDC_BATCH_PROFILE_PICKER)' not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: custom route picker not used for profile name")
+if 'align_native_preview_form(dialog)' not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: common layout adapter not wired")
+if 'GetComboBoxInfo' not in native_controls or 'CreateDialogParamW' not in gui_test:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: native runtime resource/alignment test missing")
+
 print("PASS: foobar preview is analysis-only; no tag/file write path is present")

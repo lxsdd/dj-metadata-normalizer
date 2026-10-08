@@ -174,7 +174,28 @@ else()
     target_compile_options(djmeta_track_review_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+if(WIN32)
+    # Link the real production dialog resource into a small SDK-free Windows
+    # executable. These checks exercise actual HWND controls, not text grep.
+    enable_language(RC)
+    add_executable(djmeta_native_preview_controls_tests
+        tests/native_preview_controls_tests.cpp
+        src/foobar/component.rc
+    )
+    target_compile_features(djmeta_native_preview_controls_tests PRIVATE cxx_std_20)
+    target_link_libraries(djmeta_native_preview_controls_tests PRIVATE
+        comctl32 user32)
+    if(MSVC)
+        target_compile_options(djmeta_native_preview_controls_tests PRIVATE
+            /W4 /WX /permissive-)
+    endif()
+endif()
+
 enable_testing()
+if(WIN32)
+    add_test(NAME djmeta_native_preview_controls_tests
+             COMMAND djmeta_native_preview_controls_tests)
+endif()
 add_test(NAME djmeta_track_review_tests COMMAND djmeta_track_review_tests)
 add_test(NAME djmeta_metadata_diff_tests COMMAND djmeta_metadata_diff_tests)
 add_test(NAME djmeta_table_layout_tests COMMAND djmeta_table_layout_tests)
