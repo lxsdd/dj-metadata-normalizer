@@ -4,6 +4,7 @@
 
 #include "legacy_routing_profiles.h"
 #include "prepare_dialog.h"
+#include "batch_preview_dialog.h"
 #include "resource.h"
 #include "routing_preview.h"
 
@@ -181,7 +182,7 @@ void show_prepare_tracks_dialog(const metadb_handle_list& handles) {
         return;
     }
     if (status == IDOK && state.approved)
-        show_custom_route_preview(handles, state.choice);
+        show_batch_preview_dialog(handles, state.choice);
 }
 
 } // namespace djmeta_foobar
