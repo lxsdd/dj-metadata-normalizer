@@ -59,6 +59,7 @@ void show_custom_route_preview(
         for (t_size i = 0; i < handles.get_count(); ++i)
             ++path_counts[std::string(handles[i]->get_path())];
 
+        TitleformatBatchEvaluator formatter;
         std::vector<ProposedRoute> proposed;
         proposed.reserve(static_cast<std::size_t>(handles.get_count()));
         std::size_t physically_ambiguous = 0;
@@ -90,7 +91,7 @@ void show_custom_route_preview(
                 total_unresolved += entry.unresolved_proposals;
                 // Compile/evaluate using foobar's actual titleformat compiler
                 // and an in-memory file_info; no custom parser and no writes.
-                entry.raw_relative_path = evaluate_titleformat_against_canonical(
+                entry.raw_relative_path = formatter.evaluate(
                     handle->get_location(), info, staged.document,
                     route.titleformat_expression);
                 entry.titleformat_empty = entry.raw_relative_path.empty();
