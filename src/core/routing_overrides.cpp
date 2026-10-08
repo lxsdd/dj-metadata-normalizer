@@ -94,14 +94,18 @@ RoutingOverrideResult apply_routing_override(
     }
 
     for (auto& item : result.items) {
-        if (item.role == FileRole::Audio ||
-            requested_ids.count(item.associated_audio_id) == 0)
-            continue;
+        if (item.role == FileRole::Audio) continue;
 
-        // Moving one member of a multi-FILE CUE can change relative FILE
-        // references for the whole CUE. A future host adapter must rebuild
-        // its complete associated sidecar plan before Apply.
-        invalidate_target(item);
+        // The current plan item records one primary associated_audio_id,
+        // but an external multi-FILE cue can reference MANY audio sources.
+        // To avoid retaining a stale shared CUE plan when any one source
+        // changes route, invalidate EVERY external CUE in this batch.
+        // Once the host supplies the full reference-to-audio set, this can
+        // be narrowed without weakening the safety contract.
+        if (item.role == FileRole::ExternalCue ||
+            requested_ids.count(item.associated_audio_id) != 0) {
+            invalidate_target(item);
+        }
     }
 
     result.accepted = true;
