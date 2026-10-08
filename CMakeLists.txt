@@ -184,6 +184,7 @@ if(WIN32)
         src/foobar/component.rc
     )
     target_compile_features(djmeta_native_preview_controls_tests PRIVATE cxx_std_20)
+    target_include_directories(djmeta_native_preview_controls_tests PRIVATE include)
     target_link_libraries(djmeta_native_preview_controls_tests PRIVATE
         comctl32 user32)
     if(MSVC)
