@@ -57,7 +57,7 @@ struct BatchApproval {
     std::string reviewed_plan_fingerprint;
     bool approve_all_observed_overwrites = false;
     // Optional subset, bound to the SAME plan fingerprint.
-    std::vector<std::string> individually_approved_physical_ids;
+    std::vector<std::string> individually_approved_physical_ids{};
 };
 
 struct ItemDecision {
