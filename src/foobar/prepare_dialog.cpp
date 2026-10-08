@@ -23,7 +23,7 @@ std::wstring from_utf8(const char* input) {
     if (input == nullptr || *input == '\0') return {};
     const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
                                           input, -1, nullptr, 0);
-    if (count <= 0) throw std::runtime_error("UTF-8-Text konnte nicht dargestellt werden.");
+    if (count <= 0) throw std::runtime_error("Unable to display UTF-8 text.");
     std::wstring text(static_cast<std::size_t>(count), L'\0');
     if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
                             input, -1, text.data(), count) != count)
@@ -35,24 +35,24 @@ std::wstring from_utf8(const char* input) {
 std::string to_utf8(const std::wstring& input) {
     if (input.empty()) return {};
     if (input.size() > static_cast<std::size_t>((std::numeric_limits<int>::max)()))
-        throw std::invalid_argument("Eingabe zu lang.");
+        throw std::invalid_argument("Input is too long.");
     const int len = static_cast<int>(input.size());
     const int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
                                           input.data(), len, nullptr, 0, nullptr, nullptr);
-    if (bytes <= 0) throw std::invalid_argument("Ungueltige Zeichen in der Eingabe.");
+    if (bytes <= 0) throw std::invalid_argument("Invalid characters in input.");
     std::string result(static_cast<std::size_t>(bytes), '\0');
     if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
                             input.data(), len, result.data(), bytes,
                             nullptr, nullptr) != bytes)
-        throw std::runtime_error("Textkonvertierung fehlgeschlagen.");
+        throw std::runtime_error("Text conversion failed.");
     return result;
 }
 
 std::wstring read_text(HWND dialog, int id) {
     HWND control = GetDlgItem(dialog, id);
-    if (!control) throw std::runtime_error("Eingabefeld nicht gefunden.");
+    if (!control) throw std::runtime_error("Input control not found.");
     const int len = GetWindowTextLengthW(control);
-    if (len < 0 || len > 16384) throw std::invalid_argument("Eingabe zu lang.");
+    if (len < 0 || len > 16384) throw std::invalid_argument("Input is too long.");
     std::wstring text(static_cast<std::size_t>(len) + 1, L'\0');
     const int received = GetWindowTextW(control, text.data(), len + 1);
     text.resize(static_cast<std::size_t>(received));
@@ -75,7 +75,7 @@ void populate_selection(HWND dialog, int selection) {
         SetDlgItemTextW(dialog, IDC_PREPARE_DESTINATION, target.c_str());
         SetDlgItemTextW(dialog, IDC_PREPARE_PATTERN, format.c_str());
     } else {
-        SetDlgItemTextW(dialog, IDC_PREPARE_NAME, L"Benutzerdefiniert");
+        SetDlgItemTextW(dialog, IDC_PREPARE_NAME, L"Custom");
         SetDlgItemTextW(dialog, IDC_PREPARE_DESTINATION, L"");
         SetDlgItemTextW(dialog, IDC_PREPARE_PATTERN, L"");
     }
@@ -90,8 +90,8 @@ void accept_choice(HWND dialog, PrepareDialogState& state) {
         invalid_control_chars(name) || invalid_control_chars(destination) ||
         invalid_control_chars(pattern)) {
         MessageBoxW(dialog,
-            L"Profilname, Zielordner und Dateinamensmuster muessen ausgefuellt sein "
-            L"und duerfen keine Steuerzeichen enthalten.",
+            L"Profile name, destination and naming expression are required "
+            L"and may not contain control characters.",
             L"DJ Metadata Normalizer", MB_OK | MB_ICONWARNING);
         return;
     }
@@ -115,7 +115,7 @@ INT_PTR CALLBACK prepare_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARA
         SendDlgItemMessageW(dialog, IDC_PREPARE_PROFILE, CB_ADDSTRING, 0,
                             reinterpret_cast<LPARAM>(L"Livesets"));
         SendDlgItemMessageW(dialog, IDC_PREPARE_PROFILE, CB_ADDSTRING, 0,
-                            reinterpret_cast<LPARAM>(L"Benutzerdefiniert"));
+                            reinterpret_cast<LPARAM>(L"Custom"));
         SendDlgItemMessageW(dialog, IDC_PREPARE_PROFILE, CB_SETCURSEL, 0, 0);
         for (const int id : {IDC_PREPARE_NAME, IDC_PREPARE_DESTINATION, IDC_PREPARE_PATTERN})
             SendDlgItemMessageW(dialog, id, EM_LIMITTEXT, 16384, 0);
@@ -156,7 +156,7 @@ INT_PTR CALLBACK prepare_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARA
             return TRUE;
         }
     } catch (const std::exception&) {
-        MessageBoxW(dialog, L"Die Eingaben konnten nicht uebernommen werden.",
+        MessageBoxW(dialog, L"Unable to apply the dialog input.",
                     L"DJ Metadata Normalizer", MB_OK | MB_ICONERROR);
         return TRUE;
     }
@@ -175,8 +175,8 @@ void show_prepare_tracks_dialog(const metadb_handle_list& handles) {
         reinterpret_cast<LPARAM>(&state));
     if (status == -1) {
         popup_message::g_show(
-            "Der Vorbereitungsdialog konnte nicht geoeffnet werden. "
-            "Es wurde nichts veraendert.",
+            "Unable to open the Prepare Tracks dialog. "
+            "Nothing was changed.",
             "DJ Metadata Normalizer");
         return;
     }
