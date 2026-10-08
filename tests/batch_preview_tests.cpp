@@ -24,6 +24,27 @@ bool contains(const djmeta::BatchPreviewRow& row, const std::string& text) {
 }
 
 int main() {
+    using djmeta::raw_relative_path_lexically_safe;
+    for (const std::string& valid : {
+             std::string("Album/Artist - Track.mp3"),
+             std::string("A\\B\\C.flac"),
+             std::string("Bj\xC3\xB6rk.mp3"),
+             std::string(".profile")})
+        check(raw_relative_path_lexically_safe(valid),
+              "legitimate relative path must pass lexical checks");
+    for (const std::string& dangerous : {
+             std::string("../escape.mp3"), std::string("A/../B.mp3"),
+             std::string("./X.mp3"), std::string("/absolute.mp3"),
+             std::string("C:\\\\absolute.mp3"), std::string("a//b.mp3"),
+             std::string("a/"), std::string("foo:bar.mp3"),
+             std::string("NUL.mp3"), std::string("con"),
+             std::string("A/LpT9.txt"), std::string("x. "),
+             std::string("x."), std::string("name?.mp3"),
+             std::string("name|x"), std::string("line\nfeed.mp3"),
+             std::string("nul\0byte.mp3", 12), std::string("\xC3\x28", 2)})
+        check(!raw_relative_path_lexically_safe(dangerous),
+              "unsafe Title Formatting output must not resemble an approved target");
+
     auto a = sample("a.mp3"), b = sample("b.mp3");
     const std::vector<djmeta::BatchPreviewInputRow> batch = {a,b};
     const auto c = djmeta::describe_batch_preview(batch);
@@ -50,6 +71,11 @@ int main() {
           contains(invalid.rows[0], "TARGET_EXPRESSION_EMPTY"),
           "virtual/duplicate physical audio must not look ready");
 
+    a = sample("a.mp3");
+    a.raw_relative_path = "Album/../target.mp3";
+    const auto unsafe = djmeta::describe_batch_preview({a});
+    check(contains(unsafe.rows[0], "UNSAFE_RAW_RELATIVE_TARGET"),
+          "unsafe raw paths must appear in batch preview diagnostics");
     a = sample("a.mp3");
     a.cue_dependencies_checked = true;
     a.filesystem_target_checked = true;
