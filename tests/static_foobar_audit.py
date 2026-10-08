@@ -78,6 +78,13 @@ for forbidden in [
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: planner bypasses host-native read-only boundary: " + forbidden)
 
 route_menu = (foobar / "context_menu.cpp").read_text(encoding="utf-8")
+if "get_enabled_state(unsigned index)" not in route_menu:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: menu does not expose stable host defaults")
+if "contextmenu_item::DEFAULT_OFF" not in route_menu:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: optional routes are not host-configurable")
+if "contextmenu_item::FORCE_OFF" in route_menu:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: user visibility control disabled")
+
 route_preview = (foobar / "routing_preview.cpp").read_text(encoding="utf-8")
 legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf-8")
 for label, token in {
@@ -111,6 +118,8 @@ for unsafe in [
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview includes write path: " + unsafe)
 if 'src\\foobar\\routing_preview.cpp' not in project:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview omitted from Win32/x64 project")
+if 'src\\core\\routing_overrides.cpp' not in project:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: routing overrides omitted from Win32/x64 project")
 if 'src\\core\\staging.cpp' not in project:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: staging core omitted from Win32/x64 project")
 
