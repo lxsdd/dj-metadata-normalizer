@@ -201,6 +201,31 @@ int main() {
           international.document.fields[1] == malformedOriginal.fields[1],
           "valid Unicode names accepted without changing unrelated malformed values");
 
+    // Even a forged SAFE proposal is not a generic tag-delete command.
+    const MetadataDocument blankSource{{{"TITLE", {"    "}}}};
+    AnalysisResult blankAnalysis;
+    blankAnalysis.input_fingerprint = fingerprint(blankSource);
+    Proposal blank;
+    blank.field_index = 0;
+    blank.field = "TITLE";
+    blank.value_index = 0;
+    blank.original_value = "    ";
+    blank.proposed_value = "";
+    blank.safety = SafetyClass::Safe;
+    blankAnalysis.proposals = {blank};
+    should_reject([&]{ (void)project_review_decisions(blankSource, blankAnalysis); },
+                  "automatic SAFE empty tag must not pass review");
+    blank.safety = SafetyClass::Review;
+    blankAnalysis.proposals = {blank};
+    should_reject([&]{
+        (void)project_review_decisions(blankSource, blankAnalysis,
+            {ReviewDecision{ReviewAction::Accept, ""}});
+    }, "Accept is not an implicit tag delete action");
+    const auto kept = project_review_decisions(blankSource, blankAnalysis,
+        {ReviewDecision{ReviewAction::Reject, ""}});
+    check(kept.document == blankSource && kept.explicitly_rejected == 1,
+          "Reject should preserve a blank source tag exactly");
+
     AnalysisResult none;
     none.input_fingerprint = fingerprint(original);
     const auto zero = project_review_decisions(original, none);

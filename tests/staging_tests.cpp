@@ -123,6 +123,18 @@ void test_defense_in_depth_structural_proposals() {
     } catch (const std::invalid_argument&) {}
 }
 
+void test_no_implicit_staged_tag_deletion() {
+    const djmeta::MetadataDocument source{{{"TITLE", {"    "}}}};
+    djmeta::AnalysisResult analysis;
+    analysis.input_fingerprint = djmeta::fingerprint(source);
+    analysis.proposals = {proposal(0, "TITLE", "    ", "",
+                                    djmeta::SafetyClass::Safe)};
+    try {
+        (void)djmeta::stage_safe_only(source, analysis);
+        require(false, "forged SAFE empty postimage accepted by staging");
+    } catch (const std::invalid_argument&) {}
+}
+
 void test_malformed_utf8_safe_boundary() {
     const djmeta::MetadataDocument original{{
         {"TITLE", {"  Old Title  "}},
@@ -181,5 +193,6 @@ int main() {
     test_true_multivalue_and_duplicate_fields();
     test_defense_in_depth_structural_proposals();
     test_malformed_utf8_safe_boundary();
+    test_no_implicit_staged_tag_deletion();
     std::cout << "PASS: SAFE-only staging four suites\n";
 }

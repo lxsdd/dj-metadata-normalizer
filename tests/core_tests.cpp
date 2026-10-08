@@ -63,6 +63,24 @@ void test_safe_scalar_structural_byte_guards() {
             "structured cue and lyrics remain protected");
 }
 
+void test_no_implicit_blank_tag_deletion() {
+    const djmeta::MetadataDocument source{{
+        {"TITLE", {"     "}}, {"COMMENT", {"  "}},
+        {"DATE_RAW", {"1998-06-15"}},
+        {"ARTIST", {"  Example   Artist  "}}
+    }};
+    const auto result = djmeta::Engine{}.analyze(source,
+        {unicode_whitespace_rule(), trim_rule(), collapse_rule()}, "no-delete");
+    require(result.canonical_preview.fields[0] == source.fields[0] &&
+            result.canonical_preview.fields[1] == source.fields[1] &&
+            result.canonical_preview.fields[2] == source.fields[2],
+            "generic whitespace cleanup cannot erase a nonempty tag");
+    require(result.proposals.size() == 1 &&
+            result.proposals[0].field == "ARTIST" &&
+            result.proposals[0].proposed_value == "Example Artist",
+            "ordinary artist cleanup must stay active");
+}
+
 void test_shared_metadata_utf8_validation() {
     require(djmeta::valid_utf8_metadata_text("Tiësto — 東京"),
             "valid international UTF-8 accepted");
@@ -483,6 +501,7 @@ int main() {
     test_preview_is_immutable_and_ordered();
     test_rules_file_snapshot_revision_and_source_identity();
     test_shared_metadata_utf8_validation();
+    test_no_implicit_blank_tag_deletion();
     test_safe_scalar_structural_byte_guards();
     test_unicode_whitespace_schema_v2();
     test_structured_cuesheet_and_multiline_fields_are_never_flattened();

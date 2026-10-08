@@ -116,6 +116,26 @@ void test_malformed_utf8_value_has_no_partial_safe_proposals() {
     djmeta_free_string_v1(output);
 }
 
+void test_native_abi_no_implicit_blank_tag_deletion() {
+    const char* input =
+        R"([{"name":"TITLE","values":["    "]},{"name":"ARTIST","values":["  Artist  "]}])";
+    const char* rules =
+        R"({"schema_version":2,"ruleset_id":"no-delete","revision":"r2","rules":[)"
+        R"({"id":"safe.trim","enabled":true,"priority":10,"fields":["*"],"match":{"kind":"always"},"transform":{"kind":"trim_whitespace"},"safety":"SAFE","source":{"kind":"builtin","rationale":"trim"}}]})";
+    char* output = nullptr;
+    char* error = nullptr;
+    const int status = djmeta_analyze_json_v1(input, rules, &output, &error);
+    require(status == DJMETA_STATUS_OK && output && !error,
+            "native no-delete analysis failed");
+    const std::string json(output);
+    require(json.find("\"field\":\"TITLE\"") == std::string::npos &&
+            json.find("\"field\":\"ARTIST\"") != std::string::npos,
+            "native ABI cannot recommend an empty SAFE tag value");
+    require(json.find("\"name\":\"TITLE\",\"values\":[\"    \"]") != std::string::npos,
+            "native ABI must preserve original whitespace-only tag");
+    djmeta_free_string_v1(output);
+}
+
 void test_errors_do_not_cross_abi() {
     char* output = nullptr;
     char* error = nullptr;
@@ -140,6 +160,7 @@ int main() {
     test_success();
     test_schema_v2_unicode_whitespace();
     test_structured_fields_preserved_through_shared_native_abi();
+    test_native_abi_no_implicit_blank_tag_deletion();
     test_malformed_utf8_value_has_no_partial_safe_proposals();
     test_errors_do_not_cross_abi();
     std::cout << "PASS: djmeta native analysis ABI\n";

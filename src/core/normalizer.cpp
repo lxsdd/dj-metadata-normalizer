@@ -321,6 +321,9 @@ AnalysisResult Engine::analyze(
                 if (!value_matches(*rule, current)) continue;
                 const std::string proposed = transform(*rule, current);
                 if (proposed == current) continue;
+                // Generic normalization is not a tag-delete operation.
+                // Never turn whitespace-only values into empty SAFE postimages.
+                if (proposed.empty() && !current.empty()) continue;
 
                 result.changes.push_back(Change{
                     field_index,
