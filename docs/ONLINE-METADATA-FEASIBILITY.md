@@ -24,7 +24,7 @@ User priority: functional completeness, natural foobar integration, intuitive op
   * Beatport Developer portal: https://api.beatport.com/v4/docs/ ; Beatport terms expressly require an issued API key for approved licensees: https://support.beatport.com/hc/en-us/articles/4414997837716-Terms-and-Conditions . Access **NOT VERIFIED** for this project. Do not scrape or reuse third-party/client credentials.
   * Spotify Feb 2026 Dev Mode: https://developer.spotify.com/blog/2026-02-06-update-on-developer-access-and-platform-security ; migration: https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide ; terms: https://developer.spotify.com/terms . Premium, restricted users/endpoints, storage policies and field omissions mean **optional research-only** until use-case and tag-writing rights are confirmed.
   * MusicBrainz API: https://musicbrainz.org/doc/MusicBrainz_API with user-agent and conservative 1 request/sec per client/IP. Recommended genuinely open fallback, respecting provider terms.
-  * Deezer public catalog access / new application registration and permitted persistence: **NOT VERIFIED** (no production connector authorization until confirmed).
+  * Deezer public catalog access, app registration and permitted persistence: **BLOCKED / NOT VERIFIED**. Deezer Community as of 2026-05-21 states that new developer app registration remains closed with no reopening ETA: https://en.deezercommunity.com/features-feedback-44/app-registration-82666 ; 2025-2026 API authorizations have also been disabled in some cases: https://en.deezercommunity.com/your-account-favorites-and-playlists-70/oauth-exception-81676 . Do not depend on legacy third-party credentials or unauthenticated endpoints without verified permission.
 * Existing independent implementations (Discogger; OneTagger, GPL-3.0) are reference designs, **not** a legal basis to paste implementation code into a differently licensed repository. Document license compatibility before reuse.
 
 ## 2. Source availability and deployment matrix
@@ -34,7 +34,7 @@ User priority: functional completeness, natural foobar integration, intuitive op
 | Discogs | exact release / master / track listing, credits, catalog number, label, year, media, cover references | official documented API; user authorization and quotas, field rights must be validated | candidate for first implemented provider |
 | MusicBrainz | recording-vs-release distinction, ISRC, label, recording credits, release group | documented public API with mandatory rate-limiting | candidate for first implemented provider |
 | Beatport | electronic music mix version, DJ genre, musical key, BPM, label, extended duration | actual app/license credentials unverified; strict gate | disabled until authorized |
-| Deezer | supplementary digital release/track candidate, possibly ISRC | access and long-term usage rights unverified | disabled until authorized |
+| Deezer | supplementary digital release/track candidate, possibly ISRC | new app registration reportedly closed; access and long-term usage rights unverified | disabled until authorized |
 | Spotify | corroboration (ISRC, recording, duration, album), not BPM source | restricted Dev Mode / distribution terms | opt-in only, no persistence/write use until authorized |
 
 One failed, rate-limited or unauthorized provider is a **provider-local** status, not global failure. UI displays `Available`, `Needs authorization`, `Rate limited`, `Unavailable`, `Policy disabled`, `Offline` clearly, never fake successful results.
