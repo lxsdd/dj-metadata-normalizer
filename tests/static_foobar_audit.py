@@ -85,7 +85,7 @@ batch_table_dialog = (foobar / "batch_preview_dialog.cpp").read_text(encoding="u
 layout_storage = (foobar / "batch_table_settings.cpp").read_text(encoding="utf-8")
 route_preview = (foobar / "routing_preview.cpp").read_text(encoding="utf-8")
 legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf-8")
-resources = (foobar / "component.rc", "batch_preview_dialog.cpp").read_text(encoding="utf-8")
+resources = (foobar / "component.rc").read_text(encoding="utf-8")
 
 for label, source, token in [
     ("default Singles caption", menu_settings, "Prepare: Singles (Preview)"),
