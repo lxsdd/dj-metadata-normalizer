@@ -64,6 +64,7 @@
     <ClCompile Include="src\core\table_layout.cpp" />
     <ClCompile Include="src\core\metadata_diff.cpp" />
     <ClCompile Include="src\core\track_review.cpp" />
+    <ClCompile Include="src\core\review_decisions.cpp" />
     <ClCompile Include="src\core\rule_loader.cpp" />
     <ClCompile Include="src\foobar\component.cpp" />
     <ClCompile Include="src\foobar\context_menu.cpp" />
@@ -87,6 +88,7 @@
     <ClInclude Include="include\djmeta\table_layout.h" />
     <ClInclude Include="include\djmeta\metadata_diff.h" />
     <ClInclude Include="include\djmeta\track_review.h" />
+    <ClInclude Include="include\djmeta\review_decisions.h" />
     <ClInclude Include="include\djmeta\rule_loader.h" />
     <ClInclude Include="src\foobar\guid.h" />
     <ClInclude Include="src\foobar\metadata_adapter.h" />
