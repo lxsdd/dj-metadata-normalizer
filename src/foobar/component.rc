@@ -1,3 +1,22 @@
 #include "resource.h"
 
 IDR_DEFAULT_RULESET RCDATA "../../rules/default-rules.json"
+
+IDD_PREPARE_TRACKS DIALOGEX 0, 0, 480, 188
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Tracks vorbereiten (nur Vorschau)"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT           "Vorlage:", -1, 12, 15, 78, 12
+    COMBOBOX        IDC_PREPARE_PROFILE, 94, 12, 373, 92, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Profilname:", -1, 12, 45, 78, 12
+    EDITTEXT        IDC_PREPARE_NAME, 94, 42, 373, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Zielordner:", -1, 12, 73, 78, 12
+    EDITTEXT        IDC_PREPARE_DESTINATION, 94, 70, 373, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "Dateinamensmuster:", -1, 12, 100, 79, 23
+    EDITTEXT        IDC_PREPARE_PATTERN, 94, 98, 373, 15, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "foobar Title Formatting; die Eingaben gelten nur fuer diese Vorschau.", -1, 94, 118, 373, 12
+    LTEXT           "Es werden keine Tags oder Dateien geaendert. Keine Zielpruefung oder CUE-Operation.", -1, 12, 142, 454, 12
+    DEFPUSHBUTTON   "Vorschau", IDOK, 327, 163, 66, 17
+    PUSHBUTTON      "Abbrechen", IDCANCEL, 401, 163, 66, 17
+END
