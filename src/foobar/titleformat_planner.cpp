@@ -39,24 +39,36 @@ file_info_impl project_canonical_metadata(
 
 } // namespace
 
-std::string evaluate_titleformat_against_canonical(
+std::string TitleformatBatchEvaluator::evaluate(
     const playable_location& location,
     const file_info& original_info,
     const djmeta::MetadataDocument& canonical_metadata,
     std::string_view expression) {
 
     const std::string expression_text(expression);
-    titleformat_object::ptr compiled;
-    if (!titleformat_compiler::get()->compile(compiled, expression_text.c_str())) {
-        throw std::invalid_argument("Invalid foobar2000 title-formatting expression.");
+    auto found = compiled_.find(expression_text);
+    if (found == compiled_.end()) {
+        titleformat_object::ptr compiled;
+        if (!titleformat_compiler::get()->compile(compiled, expression_text.c_str()))
+            throw std::invalid_argument("Invalid foobar2000 title-formatting expression.");
+        found = compiled_.emplace(expression_text, compiled).first;
     }
 
     file_info_impl projected =
         project_canonical_metadata(original_info, canonical_metadata);
-
     pfc::string8 output;
+    const titleformat_object::ptr& compiled = found->second;
     compiled->run_simple(location, &projected, output);
     return std::string(output.c_str(), output.get_length());
+}
+
+std::string evaluate_titleformat_against_canonical(
+    const playable_location& location,
+    const file_info& original_info,
+    const djmeta::MetadataDocument& canonical_metadata,
+    std::string_view expression) {
+    TitleformatBatchEvaluator one_shot;
+    return one_shot.evaluate(location, original_info, canonical_metadata, expression);
 }
 
 } // namespace djmeta_foobar
