@@ -4,8 +4,37 @@
 // explicit review projection. A generic metadata pipeline must never rewrite
 // embedded CUE records, even when a malformed/forged proposal is supplied.
 #include <string_view>
+#include <cstdint>
 
 namespace djmeta {
+
+// A malformed legacy original may remain byte-identical, but any NEW
+// normalized, accepted or manual tag text must be well-formed UTF-8.
+inline bool valid_utf8_metadata_text(std::string_view value) {
+    for (std::size_t pos = 0; pos < value.size();) {
+        const unsigned char first = static_cast<unsigned char>(value[pos]);
+        if (first < 0x80u) { ++pos; continue; }
+        std::uint32_t cp = 0, minimum = 0;
+        std::size_t width = 0;
+        if ((first & 0xe0u) == 0xc0u) {
+            width = 2; cp = first & 0x1fu; minimum = 0x80u;
+        } else if ((first & 0xf0u) == 0xe0u) {
+            width = 3; cp = first & 0x0fu; minimum = 0x800u;
+        } else if ((first & 0xf8u) == 0xf0u) {
+            width = 4; cp = first & 0x07u; minimum = 0x10000u;
+        } else return false;
+        if (width > value.size() - pos) return false;
+        for (std::size_t i = 1; i < width; ++i) {
+            const unsigned char next = static_cast<unsigned char>(value[pos + i]);
+            if ((next & 0xc0u) != 0x80u) return false;
+            cp = (cp << 6) | (next & 0x3fu);
+        }
+        if (cp < minimum || cp > 0x10ffffu ||
+            (cp >= 0xd800u && cp <= 0xdfffu)) return false;
+        pos += width;
+    }
+    return true;
+}
 
 inline bool metadata_field_equals_ci(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) return false;

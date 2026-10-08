@@ -8,7 +8,7 @@
 namespace djmeta {
 namespace {
 bool valid_manual_value(const std::string& text) {
-    if (text.empty()) return false; // deletion is never implicit
+    if (text.empty() || !valid_utf8_metadata_text(text)) return false; // no implicit deletion or malformed UTF-8
     for (unsigned char ch : text)
         if (ch == 0 || ch == 0x7f || (ch < 0x20 && ch != '\t'))
             return false;
@@ -39,12 +39,20 @@ ReviewProjection project_review_decisions(
             throw std::invalid_argument("review proposal does not match original field/value");
         if (is_protected_cue_metadata(field.name))
             throw std::invalid_argument("embedded CUE must use a dedicated editor");
-        if (proposal.safety == SafetyClass::Safe &&
-            !safe_scalar_metadata_field(field.name, proposal.original_value))
-            throw std::invalid_argument("unsafe automatic edit of structural metadata");
+        if (proposal.safety == SafetyClass::Safe) {
+            if (!safe_scalar_metadata_field(field.name, proposal.original_value))
+                throw std::invalid_argument("unsafe automatic edit of structural metadata");
+            if (!valid_utf8_metadata_text(proposal.original_value))
+                throw std::invalid_argument("SAFE source contains malformed UTF-8");
+        }
         if (!targets.emplace(proposal.field_index, proposal.value_index).second)
             throw std::invalid_argument("review has two proposals for one value");
         const auto& decision = decisions.empty() ? ReviewDecision{} : decisions[i];
+        if ((decision.action == ReviewAction::Accept ||
+             (decision.action == ReviewAction::Pending &&
+              proposal.safety == SafetyClass::Safe)) &&
+            !valid_utf8_metadata_text(proposal.proposed_value))
+            throw std::invalid_argument("proposed metadata value contains malformed UTF-8");
         switch (decision.action) {
         case ReviewAction::Pending:
         case ReviewAction::Accept:
