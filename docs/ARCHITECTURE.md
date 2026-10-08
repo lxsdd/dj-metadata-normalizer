@@ -136,3 +136,18 @@ interface, the rule file, or the TITLE self-test revision. Normalizer unit
 tests and a native ABI test include structural examples. A full DJ Library
 WPF runtime test remains independently blocked by its private Windows CI
 runner and is **not** claimed PASS.
+
+## Official foobar2000 SDK qualification (2026-10-08)
+
+The foobar Win32 and x64 CI builds download the official SDK dated 2026-10-01,
+checking the exact archive size (793,738 bytes) and SHA-256
+d4c55077336fae81bf8df0259b5b2748fa45ea84132c656ead93eb123cbcdc26
+from the verified lxsdd/foobar2000_component_template SDK-PIN.json.
+The bootstrap refuses changed bytes, bad 7z archives, invalid SDK directory
+layout and unexpected sdk-readme version before extracting into the active SDK.
+Existing local 2026-09-17 SDK workspaces are upgraded, not silently reused.
+No upstream SDK source/binaries are committed to this repository.
+
+Successful CI establishes build compatibility, not installed-foobar runtime
+acceptance; physical/virtual tag and foobar File Operations host gates remain
+tracked in issue #33, with all productive writers still disabled.
