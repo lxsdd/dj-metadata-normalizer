@@ -77,6 +77,43 @@ for forbidden in [
     if forbidden in planner:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: planner bypasses host-native read-only boundary: " + forbidden)
 
+route_menu = (foobar / "context_menu.cpp").read_text(encoding="utf-8")
+route_preview = (foobar / "routing_preview.cpp").read_text(encoding="utf-8")
+legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf-8")
+for label, token in {
+    "single route menu": "Vorbereiten: Singles (Vorschau)",
+    "album route menu": "Vorbereiten: Alben (Vorschau)",
+    "live sets route menu": "Vorbereiten: Livesets (Vorschau)",
+    "safe-only projection": "djmeta::stage_safe_only",
+    "foobar titleformat projection": "evaluate_titleformat_against_canonical",
+    "stale metadata guard": "djmeta::fingerprint(latest)",
+    "subsong physical guard": "get_subsong_index() != 0",
+    "raw target duplicate warning": "raw_target_counts",
+    "no-write banner": "Es wurden keine Tags geschrieben",
+}.items():
+    source = route_menu if "menu" in label else route_preview
+    if token not in source:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview missing " + label)
+for token in [
+    r"Z:\\Music\\Singles",
+    r"Z:\\Music\\Alben",
+    r"Z:\\Music\\Livesets",
+    "%album artist%/%album%/%artist% - %title%",
+    "%album artist%/%album%[ '('%date%')']/%tracknumber%. %artist% - %title%",
+]:
+    if token not in legacy_profiles:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: legacy route fixture drift: " + token)
+for unsafe in [
+    "update_info_async", "GENERIC_WRITE", "MoveFile(", "CopyFile(",
+    "DeleteFile(", "filesystem::g_move", "filesystem::g_copy",
+]:
+    if unsafe in route_preview:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview includes write path: " + unsafe)
+if 'src\\foobar\\routing_preview.cpp' not in project:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview omitted from Win32/x64 project")
+if 'src\\core\\staging.cpp' not in project:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: staging core omitted from Win32/x64 project")
+
 rules_runtime = (foobar / "rules_runtime.cpp").read_text(encoding="utf-8")
 if "CreateFileW" not in rules_runtime or "GENERIC_READ" not in rules_runtime:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: shared rules are not opened read-only")
