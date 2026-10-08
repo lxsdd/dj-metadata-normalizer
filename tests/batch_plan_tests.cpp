@@ -268,6 +268,47 @@ void test_duplicate_subsong_source_and_self_copy() {
             "copy-to-self must not be allowed");
 }
 
+void test_duplicate_selected_tag_only_source_cannot_escape_preflight() {
+    auto active = audio("Shared");
+    auto tag_only = active;
+    tag_only.action = djmeta::FileAction::None;
+    tag_only.target_key.clear();
+    tag_only.target_path.clear();
+    // A selected physical file also appears as a second metadata-only row.
+    // Even though only one row moves a file, writing decisions must not
+    // silently bind two selections of the same physical audio.
+    const auto shared = djmeta::review_batch_plan({active, tag_only});
+    require(shared.blocked == 2 && !shared.ready_to_apply &&
+            has_reason(shared.decisions[0], "DUPLICATE_PHYSICAL_SOURCE") &&
+            has_reason(shared.decisions[1], "DUPLICATE_PHYSICAL_SOURCE") &&
+            has_reason(shared.decisions[1], "DUPLICATE_PHYSICAL_ID"),
+            "tag-only duplicate of active physical source must block both rows");
+
+    // Different host paths can still report the same physical identity
+    // (hardlink/alias). Treat it as one physical file, not two approvals.
+    tag_only.source_key = "different-canonical-path";
+    const auto alias = djmeta::review_batch_plan({active, tag_only});
+    require(alias.blocked == 2 && !alias.ready_to_apply &&
+            has_reason(alias.decisions[0], "DUPLICATE_PHYSICAL_ID") &&
+            has_reason(alias.decisions[1], "DUPLICATE_PHYSICAL_ID"),
+            "selected alias with same physical identity must block both rows");
+
+    // Duplicated metadata-only selections cannot be implicitly considered
+    // Unchanged/Ready by the read-only planner.
+    active.action = djmeta::FileAction::None;
+    const auto tag_only_twice = djmeta::review_batch_plan({active, tag_only});
+    require(tag_only_twice.blocked == 2 && !tag_only_twice.ready_to_apply,
+            "two metadata-only rows with same physical identity must block");
+    const djmeta::BatchApproval blanket{shared.plan_fingerprint, true};
+    const auto still = djmeta::review_batch_plan({active, tag_only}, &blanket);
+    require(still.blocked == 2 && !still.ready_to_apply,
+            "blanket approval cannot override source identity conflicts");
+
+    const auto independent = djmeta::review_batch_plan({audio("A"), audio("B")});
+    require(independent.ready_to_apply,
+            "distinct physical identities remain independently plannable");
+}
+
 void test_external_cue_dependencies() {
     auto a = audio("A");
     a.cue_links = djmeta::CueLinkState::Unchecked;
@@ -515,6 +556,7 @@ int main() {
     test_intra_batch_conflicts_cannot_be_overridden();
     test_stale_approval_rejects_tag_only_and_noop_rows();
     test_duplicate_subsong_source_and_self_copy();
+    test_duplicate_selected_tag_only_source_cannot_escape_preflight();
     test_external_cue_dependencies();
     test_contradictory_audio_cue_evidence_rejected();
     test_cue_rewrite_only_on_external_cue_items();
