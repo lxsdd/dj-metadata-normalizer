@@ -253,6 +253,9 @@ BatchPlanReview review_batch_plan(
         if (!active_item(item)) {
             if (decision.status == PlanStatus::Blocked) {
                 if (stale_approval) block(decision, "STALE_BATCH_APPROVAL");
+                decision.metadata_write_needed = false;
+                decision.cue_bytes_write_needed = false;
+                decision.file_operation_needed = false;
                 ++review.blocked;
                 continue;
             }
@@ -261,6 +264,9 @@ BatchPlanReview review_batch_plan(
             // silently skip approval identity checking via this early exit.
             if (stale_approval) {
                 block(decision, "STALE_BATCH_APPROVAL");
+                decision.metadata_write_needed = false;
+                decision.cue_bytes_write_needed = false;
+                decision.file_operation_needed = false;
                 ++review.blocked;
             } else {
                 decision.status = decision.metadata_write_needed
