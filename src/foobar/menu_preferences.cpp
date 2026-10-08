@@ -110,13 +110,13 @@ public:
             for (unsigned index = 0; index < menu_caption_count; ++index) {
                 const std::wstring value = read_control(m_window, kControlIDs[index]);
                 if (!acceptable_caption(value))
-                    throw std::invalid_argument("Leere oder ungueltige Menuebezeichnung.");
+                    throw std::invalid_argument("Empty or invalid menu caption.");
                 all[index] = wide_to_utf8(value);
             }
         } catch (const std::exception&) {
             MessageBoxW(m_window,
-                L"Alle fuenf Befehlsnamen muessen gueltig sein (1 bis 160 Zeichen). "
-                L"Es wurde keine Einstellung geaendert.",
+                L"All five menu captions must contain 1 to 160 valid characters. "
+                L"No settings were changed.",
                 L"DJ Metadata Normalizer", MB_OK | MB_ICONWARNING);
             return;
         }
