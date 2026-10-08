@@ -338,3 +338,33 @@ as `MIXED_RULESET_REVISIONS` for every row rather than applying different
 normalization snapshots to CUE, companion and audio files. This is an
 analysis-only preflight change: no source probing or writes were added to the
 portable engine, and the component does not yet construct executable plans.
+
+### Read-only host filesystem observation (preview-only milestone)
+
+The native foobar preview has a **read-only physical source probe**. It first
+uses the pinned public foobar SDK filesystem handler to canonicalize each
+selected source, extract an actual native path and obtain host file statistics.
+On supported Windows physical paths it opens only file attributes and reads
+the OS volume/file ID, size, creation and last-modification timestamps and
+attributes. Unsupported, reparse-point, missing or inaccessible sources are
+explicitly unqualified. A portable selection gate rejects multiple paths to
+the same OS physical file ID (hardlink aliases), as well as virtual subsongs
+and duplicate selected host paths. Native details are visible as tooltips.
+
+This host observation is **not** the final host source/target/CUE approval
+gate: the current native preview deliberately retains both
+`filesystem_target_checked=false` and `cue_dependencies_checked=false`.
+The source guard is held in preview state only and cannot authorize any
+mutation; a future executable plan needs a complete live re-probe immediately
+before each operation. Candidate target path sanitization and probing,
+external CUE linkage, low-level host File Operations preferences, timestamps
+and cancel semantics remain unresolved. The portable host policy function
+has deterministic Linux/Windows regression tests; component compilation and
+packaging are checked separately for Win32/x64. Neither is an installed-host
+acceptance result.
+
+Host filesystem physical probes add per-file I/O, especially on large/NAS
+batches. Before enabling any writer, qualify latency, progress/cancellation
+and batching against representative 1/100/15,000-item selections. Use the
+SDK's available read-only batch-stats API where practical without replacing
+true physical identity evidence with a guessed path key.
