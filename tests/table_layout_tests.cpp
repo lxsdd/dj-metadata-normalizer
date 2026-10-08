@@ -78,6 +78,13 @@ void test_sort_stable_and_inputs_immutable() {
     const auto desc = djmeta::sort_batch_table_view(rows, review, 0, true);
     expect((desc == std::vector<std::size_t>{0,1,2,3}),
            "descending selection must preserve equal-key original order");
+    // Sorting by status must also keep deterministic file identities:
+    // the ListView maps selected visual rows back to these original indices.
+    const auto status_asc = djmeta::sort_batch_table_view(rows, review, 3, false);
+    auto status_copy = status_asc;
+    std::sort(status_copy.begin(), status_copy.end());
+    expect((status_copy == std::vector<std::size_t>{0,1,2,3}),
+           "status sort must not lose physical source rows");
     const auto profile = djmeta::sort_batch_table_view(rows, review, 1, false);
     expect((profile == std::vector<std::size_t>{1,3,0,2}),
            "sort by logical profile, not visual column position");
