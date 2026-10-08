@@ -105,8 +105,8 @@ for token in [
 ]:
     if token not in planner:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: host-native planner contract missing " + token)
-if "TitleformatBatchEvaluator" not in planner or
-        "titleformat_compiler::get()->compile" not in planner:
+if ("TitleformatBatchEvaluator" not in planner or
+        "titleformat_compiler::get()->compile" not in planner):
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing host titleformat cache")
 if "TitleformatBatchEvaluator formatter;" not in batch_rules_guard:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing native preview batch formatter reuse")
