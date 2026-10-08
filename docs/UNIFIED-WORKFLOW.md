@@ -307,3 +307,14 @@ native Apply/Cancel dialogs, output of plans via the shared C ABI, or an
 executor. The `ready_to_apply` core result is advisory only; the future
 executor must re-read all source and destination guards immediately before
 any mutation.
+
+## No implicit field deletion through normalization
+
+The read-only engine never converts a nonempty tag value to an empty
+postimage, even when trimming all whitespace would normally yield the
+empty string. SAFE staging and Accept review reject malformed proposals
+that try to do so. Reject keeps the original bytes untouched.
+
+A future explicit Delete Field / Delete Value choice will require its own
+per-field confirmation, physical-vs-virtual proof, and source fingerprint
+guard. No automatic blanket trim or overwrite approval grants deletion.
