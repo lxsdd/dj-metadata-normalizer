@@ -283,13 +283,18 @@ The caller supplies each physical file exactly once, including:
 
 - host-canonical source/destination identity keys (the portable engine does
   not guess Windows path equivalence or foobar path normalization);
+- a nonempty, host-observed source identity/version guard for **every** row,
+  including metadata-only, external CUE and companion rows; changing the
+  observed source after approval invalidates the entire batch;
+- a coherent ruleset revision across **all** selected rows, including
+  otherwise unchanged or tag-only rows;
 - original and selected canonical metadata fingerprints;
 - ruleset revision, route/profile, naming expression and manual override;
 - host-observed destination presence and, when present, an identity guard;
 - qualified external-CUE linkage and reference postimage fingerprint;
 - separately approved sidecar policies.
 
-The engine computes a SHA-256 plan fingerprint using length-prefixed fields
+The engine computes a SHA-256 `djmeta-batch-v2` plan fingerprint using length-prefixed fields
 and returns per-item statuses: Ready, Unchanged, NeedsOverwriteApproval or
 Blocked. It never opens files, writes tags, parses Cue files or initiates a
 move/copy. `BatchApproval` binds a single bulk-overwrite confirmation to
@@ -318,3 +323,18 @@ that try to do so. Reject keeps the original bytes untouched.
 A future explicit Delete Field / Delete Value choice will require its own
 per-field confirmation, physical-vs-virtual proof, and source fingerprint
 guard. No automatic blanket trim or overwrite approval grants deletion.
+
+### Source-observation and ruleset-coherence contract
+
+An uninspected physical source is a hard block even for tag-only selection:
+`SOURCE_NOT_INSPECTED`. The source guard is host-supplied, **not** inferred
+from a path string, metadata fingerprint or file size alone. The planner binds
+it to the immutable batch fingerprint, while the future foobar executor must
+independently re-probe before every mutation. A change in this guard makes a
+previous batch approval stale, including approval of existing destinations.
+
+All items of a batch must use the same ruleset revision. A mixture is blocked
+as `MIXED_RULESET_REVISIONS` for every row rather than applying different
+normalization snapshots to CUE, companion and audio files. This is an
+analysis-only preflight change: no source probing or writes were added to the
+portable engine, and the component does not yet construct executable plans.
