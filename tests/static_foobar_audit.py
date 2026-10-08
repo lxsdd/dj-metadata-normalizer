@@ -81,9 +81,10 @@ route_menu = (foobar / "context_menu.cpp").read_text(encoding="utf-8")
 menu_settings = (foobar / "menu_settings.cpp").read_text(encoding="utf-8")
 menu_preferences = (foobar / "menu_preferences.cpp").read_text(encoding="utf-8")
 prepare_dialog = (foobar / "prepare_dialog.cpp").read_text(encoding="utf-8")
+batch_table_dialog = (foobar / "batch_preview_dialog.cpp").read_text(encoding="utf-8")
 route_preview = (foobar / "routing_preview.cpp").read_text(encoding="utf-8")
 legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf-8")
-resources = (foobar / "component.rc").read_text(encoding="utf-8")
+resources = (foobar / "component.rc", "batch_preview_dialog.cpp").read_text(encoding="utf-8")
 
 for label, source, token in [
     ("default Singles caption", menu_settings, "Prepare: Singles (Preview)"),
@@ -100,7 +101,7 @@ for label, source, token in [
     ("foobar menu DEFAULT_OFF", route_menu, "contextmenu_item::DEFAULT_OFF"),
     ("editable destination", prepare_dialog, "IDC_PREPARE_DESTINATION"),
     ("editable expression", prepare_dialog, "IDC_PREPARE_PATTERN"),
-    ("one-off user preview", prepare_dialog, "show_custom_route_preview(handles, state.choice)"),
+    ("read-only batch table", prepare_dialog, "show_batch_preview_dialog(handles, state.choice)"),
     ("host modal cancel", prepare_dialog, "EndDialog(dialog, IDCANCEL)"),
     ("host dark mode modal", prepare_dialog, "AddDialogWithControls"),
     ("host cfg Preferences", menu_preferences, "preferences_page_v3"),
@@ -110,6 +111,15 @@ for label, source, token in [
     ("host dark-mode Preferences", menu_preferences, "preferences_state::dark_mode_supported"),
     ("native prefs dialog", resources, "IDD_MENU_PREFERENCES DIALOGEX"),
     ("native prepare dialog", resources, "IDD_PREPARE_TRACKS DIALOGEX"),
+    ("virtualized batch table resource", resources, "IDD_BATCH_PREVIEW DIALOGEX"),
+    ("virtualized ListView", batch_table_dialog, "ListView_SetItemCountEx"),
+    ("batch table model", batch_table_dialog, "djmeta::describe_batch_preview"),
+    ("group route override", batch_table_dialog, "apply_to_rows(dialog, *state, true)"),
+    ("selected route override", batch_table_dialog, "apply_to_rows(dialog, *state, false)"),
+    ("selection stale guard", batch_table_dialog, "verify_snapshot(entry)"),
+    ("per-batch atomic UI edits", batch_table_dialog, "state.entries = std::move(candidate)"),
+    ("unverified CUE gate", batch_table_dialog, "entry.input.cue_dependencies_checked = false"),
+    ("unverified destination gate", batch_table_dialog, "entry.input.filesystem_target_checked = false"),
     ("safe-only projection", route_preview, "djmeta::stage_safe_only"),
     ("foobar titleformat projection", route_preview, "evaluate_titleformat_against_canonical"),
     ("stale metadata guard", route_preview, "djmeta::fingerprint(latest)"),
@@ -152,10 +162,12 @@ for unsafe in [
     "update_info_async", "GENERIC_WRITE", "MoveFile(", "CopyFile(",
     "DeleteFile(", "filesystem::g_move", "filesystem::g_copy",
 ]:
-    if unsafe in route_preview or unsafe in prepare_dialog or unsafe in menu_preferences:
+    if unsafe in route_preview or unsafe in prepare_dialog or unsafe in menu_preferences or unsafe in batch_table_dialog:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: preview includes write path: " + unsafe)
 for path in [
     r"src\foobar\routing_preview.cpp",
+    r"src\foobar\batch_preview_dialog.cpp",
+    r"src\core\batch_preview.cpp",
     r"src\foobar\prepare_dialog.cpp",
     r"src\foobar\menu_settings.cpp",
     r"src\foobar\menu_preferences.cpp",
