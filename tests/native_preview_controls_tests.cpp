@@ -257,6 +257,57 @@ int main() {
           std::vector<std::size_t>({11}),
           "detail proposal selection resolves sorted proposal identity");
 
+    // Exercise the same shared split-layout function on the actual RC HWNDs.
+    auto client_rect = [](HWND parent, HWND child) {
+        RECT rect{};
+        check(GetWindowRect(child, &rect) != FALSE,
+              "physical list bounds available");
+        MapWindowPoints(HWND_DESKTOP, parent,
+                        reinterpret_cast<POINT*>(&rect), 2);
+        return rect;
+    };
+    const auto original_master = client_rect(dialog, master);
+    const auto original_detail = client_rect(dialog, detail);
+    const int base_gap = original_detail.left - original_master.right;
+    for (int expansion : {120, 241}) {
+        const auto projected = djmeta_foobar::review_split_geometry(
+            original_master, original_detail, expansion, 80);
+        check(projected.detail.left - projected.master.right == base_gap &&
+              projected.detail.right - original_detail.right == expansion &&
+              projected.master.bottom == projected.detail.bottom,
+              "logical master/detail resize shares space and preserves the gap");
+        check(djmeta_foobar::apply_review_split_geometry(
+                  master, detail, original_master, original_detail,
+                  expansion, 80),
+              "resize both physical production listview controls");
+        const auto physical_master = client_rect(dialog, master);
+        const auto physical_detail = client_rect(dialog, detail);
+        check(physical_master.left == projected.master.left &&
+              physical_master.right == projected.master.right &&
+              physical_detail.left == projected.detail.left &&
+              physical_detail.right == projected.detail.right &&
+              physical_master.bottom == projected.master.bottom &&
+              physical_detail.bottom == projected.detail.bottom,
+              "physical master/detail controls follow production resize geometry");
+    }
+
+    // Real Windows header widths at 100%, 125%, 150%, 200% DPI. This is
+    // programmatic column-DPI qualification, not a visual host acceptance.
+    for (int dpi : {96, 120, 144, 192}) {
+        auto dpi_layout = djmeta::default_review_grid_layout<5>(
+            {80, 105, 105, 60, 75});
+        check(djmeta::set_review_column_visible(dpi_layout, 3, false),
+              "DPI test hides safety column");
+        djmeta_foobar::apply_review_grid_controls(detail, dpi_layout, dpi);
+        check(ListView_GetColumnWidth(detail, 1) ==
+                  MulDiv(dpi_layout.widths[1], dpi, 96) &&
+              ListView_GetColumnWidth(detail, 3) == 0,
+              "real Windows ListView has DPI-scaled and hidden columns");
+        djmeta_foobar::capture_review_grid_controls(detail, dpi_layout, dpi);
+        check(dpi_layout.widths[1] == 105 && dpi_layout.widths[3] == 60,
+              "DPI capture retains logical width and hidden column width");
+    }
+
     djmeta_foobar::align_native_preview_form(dialog);
     const int rows[][2] = {
         {IDC_METADATA_FILTER_LABEL, IDC_METADATA_FILTER},
@@ -273,7 +324,7 @@ int main() {
           "preview actions exist in production resource");
 
     DestroyWindow(dialog);
-    std::cout << "PASS: Win32 review/filters command decoding, multi-select identity, manual input, action bounds; "
+    std::cout << "PASS: Win32 reviewed bindings, master/detail resizing and 96-192 DPI column geometry; "
                  "native preview resource, editable profile, "
                  "virtual master/detail controls and shared label alignment\n";
     return 0;

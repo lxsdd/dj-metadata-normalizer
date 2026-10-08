@@ -55,6 +55,7 @@ struct PreviewState {
     HWND dialog = nullptr;
     int initial_client_width = 0;
     int initial_client_height = 0;
+    int active_dpi = 96;
     int initial_list_bottom = 0;
     int initial_window_width = 0;
     int initial_window_height = 0;
@@ -486,6 +487,20 @@ constexpr unsigned kTrackColumnMenuBase = 41100u;
 constexpr unsigned kDetailColumnMenuBase = 41200u;
 
 int current_dpi(HWND window) {
+    // GetDpiForWindow reflects a per-monitor-aware host; LOGPIXELSX is
+    // system-wide and must only be a fallback.
+    // Resolve dynamically to support the foobar SDK's older _WIN32_WINNT
+    // compilation target. On older OS builds retain LOGPIXELSX fallback.
+    using DpiForWindowFn = UINT (WINAPI*)(HWND);
+    static const auto query_window_dpi = []() -> DpiForWindowFn {
+        const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+        return user32 ? reinterpret_cast<DpiForWindowFn>(
+            GetProcAddress(user32, "GetDpiForWindow")) : nullptr;
+    }();
+    if (query_window_dpi) {
+        const UINT window_dpi = query_window_dpi(window);
+        if (window_dpi) return static_cast<int>(window_dpi);
+    }
     HDC device = GetDC(window);
     if (!device) return 96;
     const int dpi = GetDeviceCaps(device, LOGPIXELSX);
@@ -695,7 +710,7 @@ void capture_resize_layout(PreviewState& state) {
                         reinterpret_cast<POINT*>(&layout.original), 2);
         const int id = GetDlgCtrlID(control);
         layout.stretch_width =
-            id == IDC_BATCH_LIST || id == IDC_METADATA_LIST ||
+            id == IDC_BATCH_LIST ||
             id == IDC_BATCH_TABS || id == IDC_BATCH_PROFILE_PICKER ||
             id == IDC_BATCH_DESTINATION || id == IDC_BATCH_PATTERN ||
             id == IDC_METADATA_MANUAL_INPUT ||
@@ -731,6 +746,19 @@ void resize_batch_dialog(PreviewState& state, int width, int height) {
                      (std::max)(8, w), (std::max)(8, h),
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
+
+    // Use the original production HWND rectangles (not a screenshot's
+    // coordinates) so master and detail each receive half of extra space.
+    const RECT* master = nullptr;
+    const RECT* detail = nullptr;
+    for (const auto& child : state.resize_controls) {
+        if (child.window == state.metadata_track_list) master = &child.original;
+        if (child.window == state.metadata_list) detail = &child.original;
+    }
+    if (master && detail)
+        apply_review_split_geometry(state.metadata_track_list,
+                                    state.metadata_list, *master, *detail,
+                                    dx, dy);
 }
 
 void apply_review_action(HWND dialog, PreviewState& state,
@@ -1027,6 +1055,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         SetDlgItemTextW(dialog, IDC_BATCH_PATTERN,
                         from_utf8(state->current_choice.titleformat_expression).c_str());
         state->dialog = dialog;
+        state->active_dpi = current_dpi(dialog);
         update_table(*state);
         update_master_table(*state);
         update_metadata_table(*state);
@@ -1240,13 +1269,27 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         return FALSE;
     }
 
-    if (message == 0x02E0u /* WM_DPICHANGED */) {
+    if (message == WM_DPICHANGED) {
+        const int new_dpi = static_cast<int>(LOWORD(wp));
+        if (new_dpi >= 96 && new_dpi <= 768 && state->active_dpi != new_dpi) {
+            // Capture at the *previous* DPI before applying a new scale.
+            // Preserve hidden logical widths and current user resizing.
+            capture_review_grid_controls(state->metadata_track_list,
+                                         state->track_grid, state->active_dpi);
+            capture_review_grid_controls(state->metadata_list,
+                                         state->detail_grid, state->active_dpi);
+            state->active_dpi = new_dpi;
+        }
         const auto* dimensions = reinterpret_cast<const RECT*>(lp);
         if (dimensions) SetWindowPos(dialog, nullptr,
             dimensions->left, dimensions->top,
             dimensions->right - dimensions->left,
             dimensions->bottom - dimensions->top,
             SWP_NOZORDER | SWP_NOACTIVATE);
+        apply_review_grid_controls(state->metadata_track_list,
+                                   state->track_grid, state->active_dpi);
+        apply_review_grid_controls(state->metadata_list,
+                                   state->detail_grid, state->active_dpi);
         align_native_preview_form(dialog);
         return TRUE;
     }

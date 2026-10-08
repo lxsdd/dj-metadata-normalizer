@@ -264,6 +264,13 @@ for token in ['apply_review_grid_controls(', 'capture_review_grid_controls(',
               'ListView_GetColumnOrderArray', 'ListView_GetColumnWidth']:
     if token not in gui_test:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: review grid real HWND acceptance missing: " + token)
+for token in ('apply_review_split_geometry(', 'GetProcAddress(user32, "GetDpiForWindow")', 'state->active_dpi', 'WM_DPICHANGED'):
+    if token not in batch_table_dialog:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: production responsive per-monitor layout missing " + token)
+if 'apply_review_split_geometry(' not in gui_test or 'review_split_geometry(' not in gui_test:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual resized HWND geometry test absent")
+if 'for (int dpi : {96, 120, 144, 192})' not in gui_test:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: DPI runtime column checks absent")
 if 'project_review_decisions(' not in batch_table_dialog or 'verify_snapshot(entry)' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual review projection lacks analysis/stale gate")
 if 'evaluate_titleformat_against_canonical(' not in batch_table_dialog or 'entry.route_expression' not in batch_table_dialog:
