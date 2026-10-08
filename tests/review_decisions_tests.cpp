@@ -168,6 +168,16 @@ int main() {
     malformedAnalysis.proposals = {bad};
     should_reject([&]{ (void)project_review_decisions(malformedOriginal, malformedAnalysis); },
                   "invalid SAFE postimage must be rejected");
+    for (const auto& bad_text : {
+        std::string("New\nline"),
+        std::string("New\0hidden", 10)}) {
+        bad.proposed_value = bad_text;
+        malformedAnalysis.proposals = {bad};
+        should_reject([&]{
+            (void)project_review_decisions(malformedOriginal, malformedAnalysis);
+        }, "forged SAFE multiline/NUL postimage entered review");
+    }
+    bad.proposed_value = std::string("Bad \xED\xA0\x80", 7);
     bad.safety = SafetyClass::Review;
     malformedAnalysis.proposals = {bad};
     should_reject([&]{

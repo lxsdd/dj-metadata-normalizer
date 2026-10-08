@@ -140,6 +140,15 @@ void test_malformed_utf8_safe_boundary() {
     try { (void)djmeta::stage_safe_only(original, a);
         require(false, "forged SAFE invalid UTF-8 postimage accepted");
     } catch (const std::invalid_argument&) {}
+    for (const auto& bad_text : {
+        std::string("New\nline"),
+        std::string("New\0hidden", 10)}) {
+        a.proposals[0].proposed_value = bad_text;
+        try {
+            (void)djmeta::stage_safe_only(original, a);
+            require(false, "forged SAFE control or multiline postimage accepted");
+        } catch (const std::invalid_argument&) {}
+    }
     a.proposals = {proposal(1, "COMMENT", original.fields[1].values[0].c_str(),
                            "Old", djmeta::SafetyClass::Safe)};
     try { (void)djmeta::stage_safe_only(original, a);

@@ -73,7 +73,8 @@ inline bool has_structured_line_break(std::string_view value) {
 // Explicit REVIEW editing is still allowed for lyrics and comments.
 inline bool safe_scalar_metadata_field(std::string_view name, std::string_view original) {
     return !is_protected_cue_metadata(name) &&
-           !is_lyrics_metadata(name) && !has_structured_line_break(original);
+           !is_lyrics_metadata(name) && !has_structured_line_break(original) &&
+           original.find('\0') == std::string_view::npos;
 }
 
 } // namespace djmeta
