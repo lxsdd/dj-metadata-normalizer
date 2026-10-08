@@ -71,6 +71,24 @@ std::vector<MetadataDiffRow> selected_track_diffs(
     }
     return rows;
 }
+std::vector<std::size_t> filter_track_view(
+    const std::vector<TrackReviewSummary>& summaries,
+    const std::vector<std::size_t>& sorted_source_indices,
+    TrackDiscovery discovery) {
+    std::vector<std::size_t> visible;
+    visible.reserve(sorted_source_indices.size());
+    for (const auto index : sorted_source_indices) {
+        if (index >= summaries.size()) continue;
+        const auto& track = summaries[index];
+        const bool changed = track.music_changes + track.extended_changes > 0;
+        if (discovery == TrackDiscovery::All ||
+            (discovery == TrackDiscovery::Changed && changed) ||
+            (discovery == TrackDiscovery::NeedsReview && track.review_required > 0))
+            visible.push_back(index);
+    }
+    return visible;
+}
+
 std::vector<std::size_t> sort_track_summaries(
     const std::vector<TrackReviewSummary>& rows,
     const std::vector<std::string>& labels, int col, bool desc) {
