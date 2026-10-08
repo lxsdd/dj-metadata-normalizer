@@ -388,6 +388,10 @@ void update_metadata_table(PreviewState& state) {
 }
 
 void update_master_table(PreviewState& state) {
+    // Retain every underlying source identity, not just the focused row.
+    // This is essential for Selected tracks actions after a sort/filter.
+    const auto previously_selected =
+        selected_native_view_ids(state.metadata_track_list, state.track_view_order);
     std::vector<std::string> labels;
     labels.reserve(state.source_labels.size());
     for(const auto& path:state.source_labels)
@@ -397,26 +401,28 @@ void update_master_table(PreviewState& state) {
         state.track_sort_descending);
     state.track_view_order = djmeta::filter_track_view(
         state.track_summaries, state.track_view_order, state.track_discovery);
-    // The chosen item is an underlying source identity, never a view row.
-    // If a filter hides it, choose the first visible track or no selection.
-    if (std::find(state.track_view_order.begin(), state.track_view_order.end(),
-                  state.selected_track_index) == state.track_view_order.end())
-        state.selected_track_index = state.track_view_order.empty()
-            ? state.track_summaries.size() : state.track_view_order.front();
+    const std::set<std::size_t> visible(state.track_view_order.begin(),
+                                        state.track_view_order.end());
+    std::vector<std::size_t> selected;
+    for (const auto id : previously_selected)
+        if (visible.count(id) != 0) selected.push_back(id);
+    if (selected.empty() && !state.track_view_order.empty()) {
+        selected.push_back(visible.count(state.selected_track_index)
+            ? state.selected_track_index : state.track_view_order.front());
+    }
+    // Focus and selected-track detail always refer to one selected source.
+    if (!selected.empty() &&
+        std::find(selected.begin(), selected.end(), state.selected_track_index) == selected.end())
+        state.selected_track_index = selected.front();
+    else if (selected.empty())
+        state.selected_track_index = state.track_summaries.size();
     if (!state.metadata_track_list) return;
     state.updating_track_selection = true;
     ListView_SetItemCountEx(state.metadata_track_list,
         static_cast<int>(state.track_view_order.size()),
         LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
-    ListView_SetItemState(state.metadata_track_list, -1, 0, LVIS_SELECTED);
-    for(std::size_t i=0;i<state.track_view_order.size();++i) {
-        if(state.track_view_order[i]==state.selected_track_index) {
-            ListView_SetItemState(state.metadata_track_list,
-                static_cast<int>(i), LVIS_SELECTED|LVIS_FOCUSED,
-                LVIS_SELECTED|LVIS_FOCUSED);
-            break;
-        }
-    }
+    restore_native_view_selection(state.metadata_track_list, state.track_view_order,
+                                  selected, state.selected_track_index);
     state.updating_track_selection = false;
     InvalidateRect(state.metadata_track_list, nullptr, FALSE);
 }
@@ -668,21 +674,15 @@ void apply_review_action(HWND dialog, PreviewState& state,
     // a sorted UI row nor a filtered field name is an edit target.
     std::set<std::pair<std::size_t, std::size_t>> targets;
     if (scope == 0) {
-        int row = -1;
-        while ((row = ListView_GetNextItem(state.metadata_list, row, LVNI_SELECTED)) >= 0) {
-            const auto index = static_cast<std::size_t>(row);
-            if (index >= state.metadata_view_order.size()) continue;
-            const auto proposal_row = state.metadata_view_order[index];
+        for (const auto proposal_row :
+                selected_native_view_ids(state.metadata_list, state.metadata_view_order)) {
             if (proposal_row >= state.focused_metadata_rows.size()) continue;
             const auto& diff = state.focused_metadata_rows[proposal_row];
             targets.emplace(diff.source_index, diff.proposal_index);
         }
     } else if (scope == 1) {
-        int row = -1;
-        while ((row = ListView_GetNextItem(state.metadata_track_list, row, LVNI_SELECTED)) >= 0) {
-            const auto index = static_cast<std::size_t>(row);
-            if (index >= state.track_view_order.size()) continue;
-            const auto track = state.track_view_order[index];
+        for (const auto track :
+                selected_native_view_ids(state.metadata_track_list, state.track_view_order)) {
             if (track >= state.analyses.size()) continue;
             for (std::size_t j = 0; j < state.analyses[track].proposals.size(); ++j)
                 targets.emplace(track, j);
@@ -1148,21 +1148,23 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
 
     if (message != WM_COMMAND) return FALSE;
     const int id = LOWORD(wp);
+    const auto native_command = native_preview_command(message, wp);
     try {
-        if (HIWORD(wp) == BN_CLICKED &&
-            (id == IDC_METADATA_ACCEPT || id == IDC_METADATA_REJECT ||
-             id == IDC_METADATA_RESET || id == IDC_METADATA_USE_VALUE)) {
-            const auto action = id == IDC_METADATA_ACCEPT
+        if (native_command == PreviewCommand::Accept ||
+            native_command == PreviewCommand::Reject ||
+            native_command == PreviewCommand::Reset ||
+            native_command == PreviewCommand::ManualValue) {
+            const auto action = native_command == PreviewCommand::Accept
                 ? djmeta::ReviewAction::Accept
-                : id == IDC_METADATA_REJECT
+                : native_command == PreviewCommand::Reject
                 ? djmeta::ReviewAction::Reject
-                : id == IDC_METADATA_RESET
+                : native_command == PreviewCommand::Reset
                 ? djmeta::ReviewAction::Pending
                 : djmeta::ReviewAction::ManualValue;
             apply_review_action(dialog, *state, action);
             return TRUE;
         }
-        if (id == IDC_METADATA_TRACK_FILTER && HIWORD(wp) == CBN_SELCHANGE) {
+        if (native_command == PreviewCommand::TrackFilterChanged) {
             const auto choice = SendDlgItemMessageW(
                 dialog, IDC_METADATA_TRACK_FILTER, CB_GETCURSEL, 0, 0);
             state->track_discovery = choice == 1 ? djmeta::TrackDiscovery::Changed :
@@ -1172,7 +1174,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             update_metadata_table(*state);
             return TRUE;
         }
-        if (id == IDC_METADATA_FILTER && HIWORD(wp) == CBN_SELCHANGE) {
+        if (native_command == PreviewCommand::FocusFilterChanged) {
             const auto choice = SendDlgItemMessageW(
                 dialog, IDC_METADATA_FILTER, CB_GETCURSEL, 0, 0);
             state->metadata_focus = choice == 1 ? djmeta::MetadataFocus::Extended :

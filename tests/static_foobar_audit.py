@@ -241,12 +241,16 @@ if 'GetComboBoxInfo' not in native_controls or 'CreateDialogParamW' not in gui_t
 
 if 'IDC_METADATA_TRACK_FILTER' not in resources or 'IDC_METADATA_TRACK_FILTER_LABEL' not in resources:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: track discovery widgets missing")
-if 'id == IDC_METADATA_TRACK_FILTER && HIWORD(wp) == CBN_SELCHANGE' not in batch_table_dialog:
+if 'native_command == PreviewCommand::TrackFilterChanged' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: track discovery control event not handled")
 if 'djmeta::filter_track_view' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: filtered master data not wired")
 if '{IDC_METADATA_TRACK_FILTER_LABEL, IDC_METADATA_TRACK_FILTER}' not in native_controls:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: native status filter alignment not wired")
+if 'native_preview_command(message, wp)' not in batch_table_dialog or 'native_preview_command(message, wp)' not in gui_test:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual production event decoder not shared with resource-backed GUI test")
+if 'selected_native_view_ids(' not in batch_table_dialog or 'restore_native_view_selection(' not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: production sort/review does not use tested stable selection adapter")
 if 'project_review_decisions(' not in batch_table_dialog or 'verify_snapshot(entry)' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual review projection lacks analysis/stale gate")
 if 'evaluate_titleformat_against_canonical(' not in batch_table_dialog or 'entry.route_expression' not in batch_table_dialog:
