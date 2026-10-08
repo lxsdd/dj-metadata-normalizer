@@ -268,6 +268,45 @@ std::wstring track_master_cell(PreviewState& state, std::size_t row, int col) {
     }
 }
 
+const djmeta::ReviewDecision* decision_for_row(
+    const PreviewState& state, const djmeta::MetadataDiffRow& item) {
+    if (item.source_index >= state.review_decisions.size()) return nullptr;
+    const auto& per_track = state.review_decisions[item.source_index];
+    return item.proposal_index < per_track.size()
+        ? &per_track[item.proposal_index] : nullptr;
+}
+
+std::wstring review_decision_caption(
+    const PreviewState& state, const djmeta::MetadataDiffRow& item) {
+    const auto* decision = decision_for_row(state, item);
+    if (!decision) return L"Unavailable";
+    switch (decision->action) {
+        case djmeta::ReviewAction::Pending:
+            return item.safety == djmeta::SafetyClass::Safe ? L"SAFE preview" : L"Pending";
+        case djmeta::ReviewAction::Accept: return L"Accepted";
+        case djmeta::ReviewAction::Reject: return L"Original";
+        case djmeta::ReviewAction::ManualValue: return L"Manual";
+    }
+    return L"Unavailable";
+}
+
+void refresh_review_summaries(PreviewState& state) {
+    state.track_summaries = djmeta::summarize_track_changes(
+        state.entries.size(), state.metadata_rows);
+    for (std::size_t i = 0; i < state.analyses.size() &&
+                          i < state.track_summaries.size(); ++i) {
+        std::size_t pending_review = 0;
+        for (std::size_t j = 0; j < state.analyses[i].proposals.size(); ++j) {
+            if (state.analyses[i].proposals[j].safety == djmeta::SafetyClass::Review &&
+                i < state.review_decisions.size() &&
+                j < state.review_decisions[i].size() &&
+                state.review_decisions[i][j].action == djmeta::ReviewAction::Pending)
+                ++pending_review;
+        }
+        state.track_summaries[i].review_required = pending_review;
+    }
+}
+
 std::wstring metadata_cell_text(PreviewState& state,
                                 std::size_t row, int column) {
     if (row >= state.metadata_view_order.size()) return {};
@@ -279,21 +318,51 @@ std::wstring metadata_cell_text(PreviewState& state,
         case 1: return from_utf8(item.original);
         case 2: return from_utf8(item.proposed);
         case 3: return from_utf8(djmeta::to_string(item.safety));
+        case 4: return review_decision_caption(state, item);
         default: return {};
     }
 }
 
 void update_metadata_table(PreviewState& state) {
+    // Preserve source-local proposal identity rather than virtual row position.
+    std::set<std::size_t> selected_proposals;
+    if (state.metadata_list &&
+        state.focused_track_index == state.selected_track_index) {
+        int row = -1;
+        while ((row = ListView_GetNextItem(state.metadata_list, row, LVNI_SELECTED)) >= 0) {
+            const auto view_row = static_cast<std::size_t>(row);
+            if (view_row < state.metadata_view_order.size() &&
+                state.metadata_view_order[view_row] < state.focused_metadata_rows.size())
+                selected_proposals.insert(
+                    state.focused_metadata_rows[state.metadata_view_order[view_row]].proposal_index);
+        }
+    }
     state.focused_metadata_rows = djmeta::selected_track_diffs(
         state.metadata_rows, state.selected_track_index, state.metadata_focus);
-    const int logical_sort_column = state.metadata_sort_column+1;
+    state.focused_track_index = state.selected_track_index;
+    const int logical_sort_column = state.metadata_sort_column == 4
+        ? 99 : state.metadata_sort_column + 1;
     state.metadata_view_order = djmeta::sort_metadata_diff_rows(
         state.focused_metadata_rows, state.source_labels,
         logical_sort_column, state.metadata_sort_descending);
+    if (state.metadata_sort_column == 4) {
+        std::stable_sort(state.metadata_view_order.begin(), state.metadata_view_order.end(),
+            [&](std::size_t a, std::size_t b) {
+                const auto lhs = review_decision_caption(state, state.focused_metadata_rows[a]);
+                const auto rhs = review_decision_caption(state, state.focused_metadata_rows[b]);
+                return state.metadata_sort_descending ? lhs > rhs : lhs < rhs;
+            });
+    }
     if (state.metadata_list) {
         ListView_SetItemCountEx(state.metadata_list,
             static_cast<int>(state.focused_metadata_rows.size()),
             LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+        ListView_SetItemState(state.metadata_list, -1, 0, LVIS_SELECTED);
+        for (std::size_t row = 0; row < state.metadata_view_order.size(); ++row)
+            if (selected_proposals.count(
+                    state.focused_metadata_rows[state.metadata_view_order[row]].proposal_index))
+                ListView_SetItemState(state.metadata_list, static_cast<int>(row),
+                    LVIS_SELECTED, LVIS_SELECTED);
         InvalidateRect(state.metadata_list, nullptr, FALSE);
     }
     if (state.dialog && state.show_metadata &&
@@ -1036,8 +1105,7 @@ void show_batch_preview_dialog(
         state.metadata_rows = djmeta::describe_metadata_diffs(state.analyses);
         for (const auto& analysis : state.analyses)
             state.review_decisions.emplace_back(analysis.proposals.size());
-        state.track_summaries = djmeta::summarize_track_changes(
-            state.entries.size(), state.metadata_rows);
+        refresh_review_summaries(state);
         for (const auto& item : state.entries)
             state.source_labels.push_back(item.input.source_path);
         update_table(state);
