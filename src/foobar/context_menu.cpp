@@ -18,6 +18,14 @@ public:
     GUID get_parent() override { return guids::context_group; }
     unsigned get_num_items() override { return 4; }
 
+    // Inherit the user's existing Preferences > Display > Context Menu
+    // visibility choices. New optional routes start out hidden but can be
+    // enabled in foobar; this is a constant SDK default, not a runtime veto.
+    t_enabled_state get_enabled_state(unsigned index) override {
+        return index == 0 ? contextmenu_item::DEFAULT_ON
+                          : contextmenu_item::DEFAULT_OFF;
+    }
+
     void get_item_name(unsigned index, pfc::string_base& output) override {
         switch (index) {
         case 0: output = "Metadaten normalisieren (Vorschau)..."; break;
