@@ -81,6 +81,48 @@ void test_identity_guards() {
     } catch (const std::invalid_argument&) {}
 }
 
+void test_defense_in_depth_structural_proposals() {
+    const djmeta::MetadataDocument input{{
+        {"CUESHEET", {"FILE \"song.mp3\" MP3\r\n  TRACK 01 AUDIO"}},
+        {"LYRICS", {"Verse 1\nVerse 2"}},
+        {"COMMENT", {"Line 1\r\nLine 2"}},
+        {"TITLE", {" A "}}
+    }};
+    djmeta::AnalysisResult a;
+    a.input_fingerprint = djmeta::fingerprint(input);
+    auto make = [&](std::size_t index, const char* replacement, djmeta::SafetyClass safety) {
+        auto p = proposal(index, input.fields[index].name.c_str(),
+                          input.fields[index].values[0].c_str(), replacement, safety);
+        return p;
+    };
+    for (const auto cue_safety : {djmeta::SafetyClass::Safe, djmeta::SafetyClass::Review}) {
+        a.proposals = {make(0, "forged cue", cue_safety)};
+        try { (void)djmeta::stage_safe_only(input, a);
+              require(false, "forged CUE proposal passed staging");
+        } catch (const std::invalid_argument&) {}
+    }
+    for (const std::size_t index : {1u, 2u}) {
+        a.proposals = {make(index, "flattened", djmeta::SafetyClass::Safe)};
+        try { (void)djmeta::stage_safe_only(input, a);
+              require(false, "forged multiline SAFE proposal passed staging");
+        } catch (const std::invalid_argument&) {}
+    }
+    a.proposals = {make(3, "A", djmeta::SafetyClass::Safe)};
+    const auto allowed = djmeta::stage_safe_only(input, a);
+    require(allowed.document.fields[3].values[0] == "A" &&
+            allowed.document.fields[0] == input.fields[0],
+            "safe scalar TITLE change must preserve unrelated CUE bytes");
+    a.proposals.push_back(a.proposals[0]);
+    try { (void)djmeta::stage_safe_only(input, a);
+          require(false, "duplicate staging target permitted");
+    } catch (const std::invalid_argument&) {}
+    a.proposals = {make(3, "A", djmeta::SafetyClass::Safe)};
+    a.proposals.push_back(make(3, "Review", djmeta::SafetyClass::Review));
+    try { (void)djmeta::stage_safe_only(input, a);
+          require(false, "deferred duplicate proposal bypassed whole-batch validation");
+    } catch (const std::invalid_argument&) {}
+}
+
 void test_true_multivalue_and_duplicate_fields() {
     const djmeta::MetadataDocument input{{
         {"ARTIST", {" A ", " B "}},
@@ -104,5 +146,6 @@ int main() {
     test_mixed_chain_is_not_automatically_selected();
     test_identity_guards();
     test_true_multivalue_and_duplicate_fields();
+    test_defense_in_depth_structural_proposals();
     std::cout << "PASS: SAFE-only staging four suites\n";
 }

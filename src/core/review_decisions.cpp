@@ -1,4 +1,5 @@
 #include "djmeta/review_decisions.h"
+#include "djmeta/structural_guard.h"
 
 #include <set>
 #include <stdexcept>
@@ -36,6 +37,11 @@ ReviewProjection project_review_decisions(
         if (field.name != proposal.field || proposal.value_index >= field.values.size() ||
             field.values[proposal.value_index] != proposal.original_value)
             throw std::invalid_argument("review proposal does not match original field/value");
+        if (is_protected_cue_metadata(field.name))
+            throw std::invalid_argument("embedded CUE must use a dedicated editor");
+        if (proposal.safety == SafetyClass::Safe &&
+            !safe_scalar_metadata_field(field.name, proposal.original_value))
+            throw std::invalid_argument("unsafe automatic edit of structural metadata");
         if (!targets.emplace(proposal.field_index, proposal.value_index).second)
             throw std::invalid_argument("review has two proposals for one value");
         const auto& decision = decisions.empty() ? ReviewDecision{} : decisions[i];

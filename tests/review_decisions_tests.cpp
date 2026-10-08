@@ -110,6 +110,46 @@ int main() {
     should_reject([&]{ (void)project_review_decisions(original, analysis, decisions); },
                   "unsafe control characters rejected in manual input");
 
+    // The same structural guard is enforced at review-projection time.
+    const MetadataDocument structured {{
+        {"CUESHEET", {"FILE \"song.mp3\" MP3\r\n  TRACK 01 AUDIO"}},
+        {"LYRICS", {"First line\nSecond line"}},
+        {"TITLE", {"  Song  "}}
+    }};
+    AnalysisResult unsafe;
+    unsafe.input_fingerprint = fingerprint(structured);
+    Proposal forgedCue;
+    forgedCue.field_index = 0;
+    forgedCue.field = "CUESHEET";
+    forgedCue.value_index = 0;
+    forgedCue.original_value = structured.fields[0].values[0];
+    forgedCue.proposed_value = "broken FILE reference";
+    for (auto safety : {SafetyClass::Safe, SafetyClass::Review}) {
+        forgedCue.safety = safety;
+        unsafe.proposals = {forgedCue};
+        should_reject([&]{ (void)project_review_decisions(structured, unsafe); },
+                      "generic projection cannot silently replace embedded cuesheet");
+        should_reject([&]{ (void)project_review_decisions(structured, unsafe,
+            {ReviewDecision{ReviewAction::Accept, ""}}); },
+            "manual Accept in generic review does not bypass protected CUE");
+    }
+    Proposal multiline;
+    multiline.field_index = 1;
+    multiline.field = "LYRICS";
+    multiline.original_value = structured.fields[1].values[0];
+    multiline.proposed_value = "one line";
+    multiline.safety = SafetyClass::Safe;
+    unsafe.proposals = {multiline};
+    should_reject([&]{ (void)project_review_decisions(structured, unsafe); },
+                  "forged SAFE lyrics flattening cannot enter review projection");
+    multiline.safety = SafetyClass::Review;
+    unsafe.proposals = {multiline};
+    const auto explicitReview = project_review_decisions(structured, unsafe,
+        {ReviewDecision{ReviewAction::Accept, ""}});
+    check(explicitReview.document.fields[1].values[0] == "one line" &&
+          explicitReview.explicitly_accepted == 1,
+          "explicit REVIEW lyric replacement remains supported");
+
     AnalysisResult none;
     none.input_fingerprint = fingerprint(original);
     const auto zero = project_review_decisions(original, none);
