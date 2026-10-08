@@ -253,6 +253,17 @@ if 'native_selected_track_change(' not in batch_table_dialog or 'native_selected
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual track selection notification not exercised with shared event adapter")
 if 'selected_native_view_ids(' not in batch_table_dialog or 'restore_native_view_selection(' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: production sort/review does not use tested stable selection adapter")
+for token in ['load_track_grid_layout()', 'load_detail_grid_layout()',
+              'store_track_grid_layout(state->track_grid)',
+              'store_detail_grid_layout(state->detail_grid)',
+              'show_review_grid_column_menu(', 'capture_review_grid_controls(',
+              'apply_review_grid_controls(', 'show_review_grid_sort_arrow(']:
+    if token not in batch_table_dialog:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: review grid production persistence/control missing: " + token)
+for token in ['apply_review_grid_controls(', 'capture_review_grid_controls(',
+              'ListView_GetColumnOrderArray', 'ListView_GetColumnWidth']:
+    if token not in gui_test:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: review grid real HWND acceptance missing: " + token)
 if 'project_review_decisions(' not in batch_table_dialog or 'verify_snapshot(entry)' not in batch_table_dialog:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual review projection lacks analysis/stale gate")
 if 'evaluate_titleformat_against_canonical(' not in batch_table_dialog or 'entry.route_expression' not in batch_table_dialog:

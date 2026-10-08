@@ -6,6 +6,7 @@
 #include "batch_table_settings.h"
 #include "legacy_routing_profiles.h"
 #include "native_preview_controls.h"
+#include "review_grid_controls.h"
 #include "metadata_adapter.h"
 #include "resource.h"
 #include "routing_preview.h"
@@ -71,10 +72,8 @@ struct PreviewState {
     HWND metadata_scope = nullptr;
     HWND tabs = nullptr;
     bool show_metadata = true;
-    int metadata_sort_column = 0;
-    bool metadata_sort_descending = false;
-    int track_sort_column = 0;
-    bool track_sort_descending = false;
+    djmeta::ReviewGridLayout<4> track_grid;
+    djmeta::ReviewGridLayout<5> detail_grid;
     bool updating_track_selection = false;
     std::size_t selected_track_index = 0;
     std::size_t focused_track_index = (std::numeric_limits<std::size_t>::max)();
@@ -345,17 +344,17 @@ void update_metadata_table(PreviewState& state) {
     state.focused_metadata_rows = djmeta::selected_track_diffs(
         state.metadata_rows, state.selected_track_index, state.metadata_focus);
     state.focused_track_index = state.selected_track_index;
-    const int logical_sort_column = state.metadata_sort_column == 4
-        ? 99 : state.metadata_sort_column + 1;
+    const int logical_sort_column = state.detail_grid.sort_column == 4
+        ? 99 : state.detail_grid.sort_column + 1;
     state.metadata_view_order = djmeta::sort_metadata_diff_rows(
         state.focused_metadata_rows, state.source_labels,
-        logical_sort_column, state.metadata_sort_descending);
-    if (state.metadata_sort_column == 4) {
+        logical_sort_column, state.detail_grid.sort_descending);
+    if (state.detail_grid.sort_column == 4) {
         std::stable_sort(state.metadata_view_order.begin(), state.metadata_view_order.end(),
             [&](std::size_t a, std::size_t b) {
                 const auto lhs = review_decision_caption(state, state.focused_metadata_rows[a]);
                 const auto rhs = review_decision_caption(state, state.focused_metadata_rows[b]);
-                return state.metadata_sort_descending ? lhs > rhs : lhs < rhs;
+                return state.detail_grid.sort_descending ? lhs > rhs : lhs < rhs;
             });
     }
     if (state.metadata_list) {
@@ -397,8 +396,8 @@ void update_master_table(PreviewState& state) {
     for(const auto& path:state.source_labels)
         labels.push_back(readable_track_name(path));
     state.track_view_order = djmeta::sort_track_summaries(
-        state.track_summaries, labels, state.track_sort_column,
-        state.track_sort_descending);
+        state.track_summaries, labels, state.track_grid.sort_column,
+        state.track_grid.sort_descending);
     state.track_view_order = djmeta::filter_track_view(
         state.track_summaries, state.track_view_order, state.track_discovery);
     const std::set<std::size_t> visible(state.track_view_order.begin(),
@@ -476,6 +475,15 @@ constexpr const wchar_t* kBatchColumnNames[djmeta::kBatchPreviewColumnCount] = {
 };
 constexpr unsigned kColumnMenuBase = 41000u;
 constexpr unsigned kColumnMenuReset = 41020u;
+
+constexpr std::array<const wchar_t*, 4> kTrackGridColumnNames{
+    L"Track", L"Music", L"Other", L"Review"
+};
+constexpr std::array<const wchar_t*, 5> kDetailGridColumnNames{
+    L"Field", L"Original", L"Proposed", L"Safety", L"Decision"
+};
+constexpr unsigned kTrackColumnMenuBase = 41100u;
+constexpr unsigned kDetailColumnMenuBase = 41200u;
 
 int current_dpi(HWND window) {
     HDC device = GetDC(window);
@@ -584,6 +592,51 @@ void show_column_menu(HWND dialog, PreviewState& state, LPARAM pointer) {
     }
 }
 
+// Shared context menu for the two independently configurable review grids.
+// Drag reorder and widths are first captured from the real Windows header.
+template<std::size_t N>
+bool show_review_grid_column_menu(
+    HWND dialog, HWND list, djmeta::ReviewGridLayout<N>& layout,
+    const djmeta::ReviewGridLayout<N>& defaults,
+    const std::array<const wchar_t*, N>& names, unsigned menu_base,
+    LPARAM pointer) {
+    if (!list) return false;
+    capture_review_grid_controls(list, layout, current_dpi(list));
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return false;
+    for (std::size_t i = 0; i < N; ++i) {
+        const unsigned bit = 1u << i;
+        const bool shown = (layout.visible_mask & bit) != 0;
+        const UINT flags = MF_STRING |
+            (shown ? MF_CHECKED : MF_UNCHECKED) |
+            (shown && layout.visible_mask == bit ? MF_GRAYED : 0u);
+        AppendMenuW(menu, flags, menu_base + static_cast<unsigned>(i), names[i]);
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, menu_base + static_cast<unsigned>(N),
+                L"Reset columns");
+
+    POINT location{static_cast<SHORT>(LOWORD(pointer)),
+                   static_cast<SHORT>(HIWORD(pointer))};
+    if (location.x == -1 && location.y == -1) GetCursorPos(&location);
+    const UINT selected = TrackPopupMenu(menu,
+        TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
+        location.x, location.y, 0, dialog, nullptr);
+    DestroyMenu(menu);
+    if (selected >= menu_base && selected < menu_base + N) {
+        const std::size_t column = static_cast<std::size_t>(selected - menu_base);
+        const bool visible = (layout.visible_mask & (1u << column)) != 0;
+        if (!djmeta::set_review_column_visible(layout, column, !visible))
+            return false;
+    } else if (selected == menu_base + N) {
+        layout = defaults;
+        apply_review_grid_controls(list, layout, current_dpi(list));
+        return true; // sort key may also have changed: refresh source mapping
+    } else return false;
+    apply_review_grid_controls(list, layout, current_dpi(list));
+    return false;
+}
+
 // The header is a child of the ListView, not the dialog. Subclassing it
 // ensures keyboard/mouse WM_CONTEXTMENU reliably reaches our column picker.
 LRESULT CALLBACK batch_header_proc(
@@ -591,7 +644,24 @@ LRESULT CALLBACK batch_header_proc(
     UINT_PTR subclass_id, DWORD_PTR ref_data) {
     auto* state = reinterpret_cast<PreviewState*>(ref_data);
     if (message == WM_CONTEXTMENU && state && state->list) {
-        show_column_menu(GetParent(state->list), *state, lp);
+        const HWND dialog = GetParent(state->list);
+        if (header == ListView_GetHeader(state->list)) {
+            show_column_menu(dialog, *state, lp);
+        } else if (header == ListView_GetHeader(state->metadata_track_list)) {
+            if (show_review_grid_column_menu(dialog, state->metadata_track_list,
+                    state->track_grid, default_track_grid_layout(),
+                    kTrackGridColumnNames, kTrackColumnMenuBase, lp)) {
+                update_master_table(*state);
+                update_metadata_table(*state);
+            }
+        } else if (header == ListView_GetHeader(state->metadata_list)) {
+            if (show_review_grid_column_menu(dialog, state->metadata_list,
+                    state->detail_grid, default_detail_grid_layout(),
+                    kDetailGridColumnNames, kDetailColumnMenuBase, lp))
+                update_metadata_table(*state);
+        } else {
+            return DefSubclassProc(header, message, wp, lp);
+        }
         return 0;
     }
     if (message == WM_NCDESTROY)
@@ -882,6 +952,9 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         add_column(state->metadata_track_list, 1, L"Music", 40);
         add_column(state->metadata_track_list, 2, L"Other", 40);
         add_column(state->metadata_track_list, 3, L"Review", 45);
+        state->track_grid = load_track_grid_layout();
+        apply_review_grid_controls(state->metadata_track_list, state->track_grid,
+                                   current_dpi(state->metadata_track_list));
         ListView_SetExtendedListViewStyle(state->metadata_list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP |
             LVS_EX_HEADERDRAGDROP);
@@ -890,6 +963,9 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         add_column(state->metadata_list, 2, L"Proposed", 95);
         add_column(state->metadata_list, 3, L"Safety", 57);
         add_column(state->metadata_list, 4, L"Decision", 68);
+        state->detail_grid = load_detail_grid_layout();
+        apply_review_grid_controls(state->metadata_list, state->detail_grid,
+                                   current_dpi(state->metadata_list));
         for (const wchar_t* focus : {L"Music tags", L"Extended tags", L"All fields"})
             SendDlgItemMessageW(dialog, IDC_METADATA_FILTER, CB_ADDSTRING,
                 0, reinterpret_cast<LPARAM>(focus));
@@ -918,6 +994,12 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             !SetWindowSubclass(batch_header, batch_header_proc, 1,
                 reinterpret_cast<DWORD_PTR>(state)))
             throw std::runtime_error("Unable to attach batch column menu.");
+        for (const HWND grid : {state->metadata_track_list, state->metadata_list}) {
+            const HWND header = ListView_GetHeader(grid);
+            if (!header || !SetWindowSubclass(header, batch_header_proc, 1,
+                     reinterpret_cast<DWORD_PTR>(state)))
+                throw std::runtime_error("Unable to attach review column menu.");
+        }
         for (const int id : {IDC_BATCH_DESTINATION, IDC_BATCH_PATTERN})
             SendDlgItemMessageW(dialog, id, EM_LIMITTEXT, 16384, 0);
         SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_LIMITTEXT, 16384, 0);
@@ -997,14 +1079,15 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
             if (click->iSubItem >= 0 && click->iSubItem < 4) {
-                if (click->iSubItem == state->track_sort_column)
-                    state->track_sort_descending = !state->track_sort_descending;
+                if (click->iSubItem == state->track_grid.sort_column)
+                    state->track_grid.sort_descending = !state->track_grid.sort_descending;
                 else {
-                    state->track_sort_column = click->iSubItem;
-                    state->track_sort_descending = false;
+                    state->track_grid.sort_column = click->iSubItem;
+                    state->track_grid.sort_descending = false;
                 }
                 update_master_table(*state);
                 update_metadata_table(*state);
+                show_review_grid_sort_arrow(state->metadata_track_list, state->track_grid);
             }
             return TRUE;
         }
@@ -1061,13 +1144,14 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
             if (click->iSubItem >= 0 && click->iSubItem < 5) {
-                if (click->iSubItem == state->metadata_sort_column)
-                    state->metadata_sort_descending = !state->metadata_sort_descending;
+                if (click->iSubItem == state->detail_grid.sort_column)
+                    state->detail_grid.sort_descending = !state->detail_grid.sort_descending;
                 else {
-                    state->metadata_sort_column = click->iSubItem;
-                    state->metadata_sort_descending = false;
+                    state->detail_grid.sort_column = click->iSubItem;
+                    state->detail_grid.sort_descending = false;
                 }
                 update_metadata_table(*state);
+                show_review_grid_sort_arrow(state->metadata_list, state->detail_grid);
             }
             return TRUE;
         }
@@ -1113,11 +1197,30 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         }
     }
 
-    if (message == WM_CONTEXTMENU &&
-        reinterpret_cast<HWND>(wp) == ListView_GetHeader(state->list)) {
-        // Compatibility fallback if the control forwards header events.
-        show_column_menu(dialog, *state, lp);
-        return TRUE;
+    if (message == WM_CONTEXTMENU) {
+        // Fallback for dialog-forwarded header notifications; the subclass
+        // handles native keyboard and right-click delivery directly.
+        const HWND requested = reinterpret_cast<HWND>(wp);
+        if (requested == ListView_GetHeader(state->list)) {
+            show_column_menu(dialog, *state, lp);
+            return TRUE;
+        }
+        if (requested == ListView_GetHeader(state->metadata_track_list)) {
+            if (show_review_grid_column_menu(dialog, state->metadata_track_list,
+                    state->track_grid, default_track_grid_layout(),
+                    kTrackGridColumnNames, kTrackColumnMenuBase, lp)) {
+                update_master_table(*state);
+                update_metadata_table(*state);
+            }
+            return TRUE;
+        }
+        if (requested == ListView_GetHeader(state->metadata_list)) {
+            if (show_review_grid_column_menu(dialog, state->metadata_list,
+                    state->detail_grid, default_detail_grid_layout(),
+                    kDetailGridColumnNames, kDetailColumnMenuBase, lp))
+                update_metadata_table(*state);
+            return TRUE;
+        }
     }
     if (message == WM_DESTROY) {
         // UI layout is independent of preview Cancel/Close. Save only display
@@ -1125,6 +1228,12 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         try {
             capture_column_layout(*state);
             store_batch_table_layout(state->layout);
+            capture_review_grid_controls(state->metadata_track_list, state->track_grid,
+                                         current_dpi(state->metadata_track_list));
+            capture_review_grid_controls(state->metadata_list, state->detail_grid,
+                                         current_dpi(state->metadata_list));
+            store_track_grid_layout(state->track_grid);
+            store_detail_grid_layout(state->detail_grid);
         } catch (const std::exception&) {
             // Invalid profile display state is non-critical; retain defaults.
         }
