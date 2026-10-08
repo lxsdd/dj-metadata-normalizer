@@ -1,10 +1,58 @@
 #include "djmeta/batch_preview.h"
+#include "djmeta/structural_guard.h"
 
 #include <map>
+#include <string_view>
 #include <string>
 #include <vector>
 
 namespace djmeta {
+namespace {
+
+bool ascii_reserved_windows_device(std::string_view component) {
+    // Windows rejects device aliases even with a filename extension.
+    // Compare only the base before the first dot using ASCII case folding.
+    const auto dot = component.find('.');
+    const auto base = component.substr(0, dot);
+    std::string up;
+    up.reserve(base.size());
+    for (char ch : base)
+        up.push_back(ch >= 'a' && ch <= 'z' ? static_cast<char>(ch - 'a' + 'A') : ch);
+    if (up == "CON" || up == "PRN" || up == "AUX" || up == "NUL") return true;
+    if (up.size() == 4 && up[3] >= '1' && up[3] <= '9' &&
+        (up.substr(0, 3) == "COM" || up.substr(0, 3) == "LPT")) return true;
+    return false;
+}
+
+bool safe_component(std::string_view component) {
+    if (component.empty() || component == "." || component == ".." ||
+        component.back() == '.' || component.back() == ' ' ||
+        ascii_reserved_windows_device(component)) return false;
+    for (unsigned char ch : component) {
+        if (ch < 0x20 || ch == 0x7f || ch == '<' || ch == '>' ||
+            ch == ':' || ch == '\"' || ch == '|' || ch == '?' || ch == '*')
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+bool raw_relative_path_lexically_safe(std::string_view raw) {
+    if (raw.empty() || raw.size() > 32767 || !valid_utf8_metadata_text(raw))
+        return false;
+    std::size_t first = 0;
+    while (first < raw.size()) {
+        const auto separator = raw.find_first_of("/\\\\", first);
+        const auto last = separator == std::string_view::npos ? raw.size() : separator;
+        if (!safe_component(raw.substr(first, last - first))) return false;
+        if (separator == std::string_view::npos) return true;
+        first = separator + 1;
+    }
+    // A trailing slash is not a finished filename.
+    return false;
+}
+
 BatchPreviewTable describe_batch_preview(
     const std::vector<BatchPreviewInputRow>& items) {
     BatchPreviewTable out;
@@ -28,6 +76,8 @@ BatchPreviewTable describe_batch_preview(
             row.issues.emplace_back("PHYSICAL_SOURCE_UNQUALIFIED");
         if (row.raw_destination.empty())
             row.issues.emplace_back("TARGET_EXPRESSION_EMPTY");
+        else if (!raw_relative_path_lexically_safe(item.raw_relative_path))
+            row.issues.emplace_back("UNSAFE_RAW_RELATIVE_TARGET");
         if (!row.raw_destination.empty() && counts[row.raw_destination] > 1) {
             row.has_raw_target_collision = true;
             row.issues.emplace_back("DUPLICATE_RAW_TARGET");
