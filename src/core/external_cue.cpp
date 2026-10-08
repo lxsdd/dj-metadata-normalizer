@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <string_view>
+#include <map>
+#include <utility>
 
 namespace djmeta {
 namespace {
@@ -208,6 +210,83 @@ ExternalCueInventory inspect_external_cue(std::string_view raw_bytes) {
         out.diagnostics.emplace_back("CUE_NO_VALID_FILE_REFERENCE");
     }
     return out;
+}
+
+ExternalCueRewritePreview preview_external_cue_reference_rewrite(
+    std::string_view source_bytes,
+    const std::vector<CueReferenceRename>& renames) {
+
+    ExternalCueRewritePreview result;
+    const auto inventory = inspect_external_cue(source_bytes);
+    if (inventory.status != CueSyntaxStatus::Parsed) {
+        result.diagnostics.emplace_back("CUE_SYNTAX_OR_ENCODING_NOT_QUALIFIED");
+        return result;
+    }
+
+    std::map<std::size_t, std::string> substitutions;
+    for (const CueReferenceRename& change : renames) {
+        if (change.reference_index >= inventory.references.size()) {
+            result.diagnostics.emplace_back("CUE_REFERENCE_INDEX_OUT_OF_RANGE");
+            return result;
+        }
+        const auto& reference = inventory.references[change.reference_index];
+        if (reference.filename != change.expected_filename) {
+            result.diagnostics.emplace_back("CUE_REFERENCE_CHANGED_SINCE_REVIEW");
+            return result;
+        }
+        if (change.proposed_filename.empty() ||
+            !valid_utf8(change.proposed_filename) ||
+            has_control_byte(change.proposed_filename) ||
+            change.proposed_filename.find('"') != std::string::npos) {
+            result.diagnostics.emplace_back("CUE_NEW_REFERENCE_INVALID");
+            return result;
+        }
+        if (!substitutions.emplace(change.reference_index,
+                                   change.proposed_filename).second) {
+            result.diagnostics.emplace_back("CUE_REFERENCE_RENAMED_TWICE");
+            return result;
+        }
+    }
+
+    // Use offsets from a fresh parse of the EXACT passed bytes. No search and
+    // replace on arbitrary titles or unselected FILE references.
+    std::string output;
+    output.reserve(source_bytes.size());
+    std::size_t cursor = 0;
+    for (std::size_t i = 0; i < inventory.references.size(); ++i) {
+        const auto found = substitutions.find(i);
+        if (found == substitutions.end()) continue;
+        const auto& ref = inventory.references[i];
+        output.append(source_bytes.substr(cursor, ref.filename_begin - cursor));
+        if (!ref.quoted && found->second.find(' ') != std::string::npos) {
+            // A new space must not turn the filename into several CUE tokens.
+            output.push_back('"');
+            output.append(found->second);
+            output.push_back('"');
+        } else {
+            output.append(found->second);
+        }
+        cursor = ref.filename_end;
+    }
+    output.append(source_bytes.substr(cursor));
+
+    // Fail closed if the proposed text is no longer a qualified syntax tree.
+    const auto post = inspect_external_cue(output);
+    if (post.status != CueSyntaxStatus::Parsed ||
+        post.references.size() != inventory.references.size()) {
+        result.diagnostics.emplace_back("CUE_PROPOSED_POSTIMAGE_UNQUALIFIED");
+        return result;
+    }
+    for (const auto& [index, proposed_name] : substitutions) {
+        if (post.references[index].filename != proposed_name) {
+            result.diagnostics.emplace_back("CUE_POSTIMAGE_REFERENCE_MISMATCH");
+            return result;
+        }
+    }
+    result.changed = output != source_bytes;
+    result.eligible = true;
+    result.proposed_bytes = std::move(output);
+    return result;
 }
 
 } // namespace djmeta
