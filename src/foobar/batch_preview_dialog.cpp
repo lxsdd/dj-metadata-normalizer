@@ -12,6 +12,7 @@
 #include "titleformat_planner.h"
 
 #include "djmeta/batch_preview.h"
+#include "djmeta/metadata_diff.h"
 #include "djmeta/table_layout.h"
 #include "djmeta/staging.h"
 
@@ -59,6 +60,15 @@ struct PreviewState {
     std::wstring cell_buffer;
     fb2k::CCoreDarkModeHooks dark;
     HWND list = nullptr;
+    HWND metadata_list = nullptr;
+    HWND tabs = nullptr;
+    bool show_metadata = true;
+    int metadata_sort_column = 0;
+    bool metadata_sort_descending = false;
+    std::vector<djmeta::AnalysisResult> analyses;
+    std::vector<djmeta::MetadataDiffRow> metadata_rows;
+    std::vector<std::size_t> metadata_view_order;
+    std::vector<std::string> source_labels;
     djmeta::BatchTableLayout layout = djmeta::default_batch_table_layout();
     // Visible ListView item index -> underlying input row identity.
     std::vector<std::size_t> view_order;
@@ -188,7 +198,18 @@ std::string status_text(const djmeta::BatchPreviewRow& row) {
         if (issue == "DUPLICATE_RAW_TARGET") return "Duplicate raw target";
         if (issue == "UNAPPROVED_METADATA_PROPOSALS") return "Metadata: REVIEW";
     }
-    return "CUE / filesystem unchecked";
+    // Global limitations are explained in the footer rather than shown
+    // repeatedly as a warning in every otherwise unremarkable row.
+    return "";
+}
+
+// Strip foobar's file:// locator only for presentation, never for identity.
+std::string display_file_path(const std::string& path) {
+    if (path.compare(0, 8, "file:///") == 0)
+        return path.substr(8);
+    if (path.compare(0, 7, "file://") == 0)
+        return path.substr(7);
+    return path;
 }
 
 std::wstring cell_text(PreviewState& state, std::size_t row, int column) {
@@ -196,11 +217,67 @@ std::wstring cell_text(PreviewState& state, std::size_t row, int column) {
     const auto& entry = state.entries[row];
     const auto& summary = state.table.rows[row];
     switch (column) {
-    case 0: return from_utf8(entry.input.source_path);
+    case 0: return from_utf8(display_file_path(entry.input.source_path));
     case 1: return from_utf8(entry.input.profile);
-    case 2: return from_utf8(summary.raw_destination);
+    case 2: {
+        std::string display = summary.raw_destination;
+        for (char& ch : display) if (ch == '/') ch = '\\';
+        return from_utf8(display);
+    }
     case 3: return from_utf8(status_text(summary));
     default: return {};
+    }
+}
+
+std::wstring metadata_cell_text(PreviewState& state,
+                                 std::size_t row, int column) {
+    if (row >= state.metadata_view_order.size()) return {};
+    const auto index = state.metadata_view_order[row];
+    if (index >= state.metadata_rows.size()) return {};
+    const auto& item = state.metadata_rows[index];
+    switch (column) {
+    case 0: return item.source_index < state.source_labels.size()
+        ? from_utf8(display_file_path(state.source_labels[item.source_index]))
+        : std::wstring{};
+    case 1: return from_utf8(item.field);
+    case 2: return from_utf8(item.original);
+    case 3: return from_utf8(item.proposed);
+    case 4: return from_utf8(djmeta::to_string(item.safety));
+    case 5: return from_utf8(item.rule_ids);
+    default: return {};
+    }
+}
+
+void update_metadata_table(PreviewState& state) {
+    state.metadata_view_order = djmeta::sort_metadata_diff_rows(
+        state.metadata_rows, state.source_labels,
+        state.metadata_sort_column, state.metadata_sort_descending);
+    if (state.metadata_list) {
+        ListView_SetItemCountEx(state.metadata_list,
+            static_cast<int>(state.metadata_rows.size()),
+            LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+        InvalidateRect(state.metadata_list, nullptr, FALSE);
+    }
+}
+
+void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
+    state.show_metadata = metadata;
+    ShowWindow(state.metadata_list, metadata ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.list, metadata ? SW_HIDE : SW_SHOW);
+    for (int id : {IDC_BATCH_PROFILE_PICKER, IDC_BATCH_PROFILE_NAME,
+                   IDC_BATCH_DESTINATION, IDC_BATCH_PATTERN,
+                   IDC_BATCH_APPLY_SELECTED, IDC_BATCH_APPLY_ALL}) {
+        EnableWindow(GetDlgItem(dialog, id), metadata ? FALSE : TRUE);
+    }
+    if (metadata) {
+        const std::wstring caption =
+            L"Metadata proposals: " + std::to_wstring(state.metadata_rows.size()) +
+            L". SAFE values are staged for filename preview; no tags are written.";
+        SetDlgItemTextW(dialog, IDC_BATCH_HINT, caption.c_str());
+    } else {
+        SetDlgItemTextW(dialog, IDC_BATCH_HINT,
+            L"File targets and CUE dependencies are not verified. "
+            L"Routing changes affect this preview only.");
     }
 }
 
@@ -370,12 +447,14 @@ void capture_resize_layout(PreviewState& state) {
                         reinterpret_cast<POINT*>(&layout.original), 2);
         const int id = GetDlgCtrlID(control);
         layout.stretch_width =
-            id == IDC_BATCH_LIST || id == IDC_BATCH_PROFILE_NAME ||
+            id == IDC_BATCH_LIST || id == IDC_METADATA_LIST ||
+            id == IDC_BATCH_TABS || id == IDC_BATCH_PROFILE_NAME ||
             id == IDC_BATCH_DESTINATION || id == IDC_BATCH_PATTERN ||
             (id == -1 && layout.original.right >
              current.initial_client_width - 24);
-        layout.stretch_height = id == IDC_BATCH_LIST;
-        layout.shift_down = id != IDC_BATCH_LIST &&
+        layout.stretch_height = id == IDC_BATCH_LIST || id == IDC_METADATA_LIST;
+        layout.shift_down = id != IDC_BATCH_LIST && id != IDC_METADATA_LIST &&
+            id != IDC_BATCH_TABS &&
             layout.original.top >= current.initial_list_bottom;
         layout.shift_right = id == IDC_BATCH_APPLY_SELECTED ||
                              id == IDC_BATCH_APPLY_ALL || id == IDCANCEL;
@@ -449,7 +528,8 @@ void apply_to_rows(HWND dialog, PreviewState& state, bool all) {
 
 std::vector<PreviewEntry> capture_preview(
     const metadb_handle_list& handles,
-    const RoutePreviewChoice& choice) {
+    const RoutePreviewChoice& choice,
+    std::vector<djmeta::AnalysisResult>& analyses) {
 
     const auto loaded = load_rules_text();
     const auto rules = djmeta::parse_ruleset_json(loaded.json);
@@ -465,7 +545,7 @@ std::vector<PreviewEntry> capture_preview(
         const auto info_ref = handle->get_info_ref();
         const file_info& info = info_ref->info();
         const auto original = metadata_from_file_info(info);
-        const auto result = djmeta::Engine{}.analyze(
+        auto result = djmeta::Engine{}.analyze(
             original, rules.rules, rules.revision);
         auto staged = djmeta::stage_safe_only(original, result);
 
@@ -491,6 +571,7 @@ std::vector<PreviewEntry> capture_preview(
                 choice.titleformat_expression);
         }
         entries.push_back(std::move(entry));
+        analyses.push_back(std::move(result));
     }
     for (const auto& entry : entries) verify_snapshot(entry);
     return entries;
@@ -503,14 +584,31 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         try {
         state->dark.AddDialogWithControls(dialog);
         state->list = GetDlgItem(dialog, IDC_BATCH_LIST);
-        if (!state->list) return FALSE;
+        state->metadata_list = GetDlgItem(dialog, IDC_METADATA_LIST);
+        state->tabs = GetDlgItem(dialog, IDC_BATCH_TABS);
+        if (!state->list || !state->metadata_list || !state->tabs) return FALSE;
+        for (const wchar_t* name : {L"Metadata changes", L"File locations"}) {
+            TCITEMW tab{};
+            tab.mask = TCIF_TEXT;
+            tab.pszText = const_cast<wchar_t*>(name);
+            TabCtrl_InsertItem(state->tabs, TabCtrl_GetItemCount(state->tabs), &tab);
+        }
+        TabCtrl_SetCurSel(state->tabs, 0);
+        ListView_SetExtendedListViewStyle(state->metadata_list,
+            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP);
+        add_column(state->metadata_list, 0, L"Source file", 240);
+        add_column(state->metadata_list, 1, L"Field", 110);
+        add_column(state->metadata_list, 2, L"Original", 235);
+        add_column(state->metadata_list, 3, L"Proposed", 235);
+        add_column(state->metadata_list, 4, L"Safety", 95);
+        add_column(state->metadata_list, 5, L"Rule IDs", 200);
 
         ListView_SetExtendedListViewStyle(state->list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
             LVS_EX_HEADERDRAGDROP);
         add_column(state->list, 0, L"Source file", 170);
         add_column(state->list, 1, L"Profile", 82);
-        add_column(state->list, 2, L"Proposed raw target", 275);
+        add_column(state->list, 2, L"Proposed path (unverified)", 275);
         add_column(state->list, 3, L"Status", 160);
         state->layout = load_batch_table_layout();
         apply_column_layout(*state);
@@ -525,7 +623,18 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         for (const wchar_t* profile : {L"Singles", L"Albums", L"Live Sets", L"Custom"})
             SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_ADDSTRING,
                 0, reinterpret_cast<LPARAM>(profile));
-        SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_SETCURSEL, 3, 0);
+        int initial_profile = 3;
+        for (std::size_t i = 0; i < legacy_move_route_count; ++i) {
+            const auto& profile = legacy_move_routes[i];
+            if (state->current_choice.display_name == profile.name &&
+                state->current_choice.destination_root == profile.destination_root &&
+                state->current_choice.titleformat_expression == profile.foobar_titleformat) {
+                initial_profile = static_cast<int>(i);
+                break;
+            }
+        }
+        SendDlgItemMessageW(dialog, IDC_BATCH_PROFILE_PICKER, CB_SETCURSEL,
+                            static_cast<WPARAM>(initial_profile), 0);
         SetDlgItemTextW(dialog, IDC_BATCH_PROFILE_NAME,
                         from_utf8(state->current_choice.display_name).c_str());
         SetDlgItemTextW(dialog, IDC_BATCH_DESTINATION,
@@ -533,6 +642,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         SetDlgItemTextW(dialog, IDC_BATCH_PATTERN,
                         from_utf8(state->current_choice.titleformat_expression).c_str());
         update_table(*state);
+        update_metadata_table(*state);
+        show_preview_page(dialog, *state, true);
         state->dialog = dialog;
         capture_resize_layout(*state);
         return TRUE;
@@ -561,6 +672,35 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
 
     if (message == WM_NOTIFY) {
         const auto* header = reinterpret_cast<const NMHDR*>(lp);
+        if (header && header->idFrom == IDC_BATCH_TABS &&
+            header->code == TCN_SELCHANGE) {
+            show_preview_page(dialog, *state, TabCtrl_GetCurSel(state->tabs) == 0);
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_LIST &&
+            header->code == LVN_COLUMNCLICK) {
+            const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
+            if (click->iSubItem >= 0 && click->iSubItem < 6) {
+                if (click->iSubItem == state->metadata_sort_column)
+                    state->metadata_sort_descending = !state->metadata_sort_descending;
+                else {
+                    state->metadata_sort_column = click->iSubItem;
+                    state->metadata_sort_descending = false;
+                }
+                update_metadata_table(*state);
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_LIST &&
+            header->code == LVN_GETDISPINFOW) {
+            auto* info = reinterpret_cast<NMLVDISPINFOW*>(lp);
+            if ((info->item.mask & LVIF_TEXT) != 0 && info->item.iItem >= 0) {
+                state->cell_buffer = metadata_cell_text(*state,
+                    static_cast<std::size_t>(info->item.iItem), info->item.iSubItem);
+                info->item.pszText = state->cell_buffer.data();
+            }
+            return TRUE;
+        }
         if (header && header->idFrom == IDC_BATCH_LIST &&
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
@@ -662,8 +802,12 @@ void show_batch_preview_dialog(
 
         PreviewState state;
         state.current_choice = initial_choice;
-        state.entries = capture_preview(handles, initial_choice);
+        state.entries = capture_preview(handles, initial_choice, state.analyses);
+        state.metadata_rows = djmeta::describe_metadata_diffs(state.analyses);
+        for (const auto& item : state.entries)
+            state.source_labels.push_back(item.input.source_path);
         update_table(state);
+        update_metadata_table(state);
 
         INITCOMMONCONTROLSEX controls = {};
         controls.dwSize = sizeof(controls);

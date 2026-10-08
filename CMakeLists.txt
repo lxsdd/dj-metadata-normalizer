@@ -11,6 +11,7 @@ add_library(djmeta_core STATIC
     src/core/routing_overrides.cpp
     src/core/batch_preview.cpp
     src/core/table_layout.cpp
+    src/core/metadata_diff.cpp
     src/core/rule_loader.cpp
     src/core/analysis_json.cpp
 )
@@ -154,7 +155,17 @@ else()
     target_compile_options(djmeta_table_layout_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+add_executable(djmeta_metadata_diff_tests tests/metadata_diff_tests.cpp)
+target_link_libraries(djmeta_metadata_diff_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_metadata_diff_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_metadata_diff_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_metadata_diff_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_metadata_diff_tests COMMAND djmeta_metadata_diff_tests)
 add_test(NAME djmeta_table_layout_tests COMMAND djmeta_table_layout_tests)
 add_test(NAME djmeta_batch_preview_tests COMMAND djmeta_batch_preview_tests)
 add_test(NAME djmeta_routing_overrides_tests COMMAND djmeta_routing_overrides_tests)
