@@ -20,6 +20,10 @@ struct FilePlanItem {
     std::string physical_id;
     std::string source_path;
     std::string source_key;
+    // Exact host-observed source identity/version evidence from a read-only
+    // probe. Not interchangeable with the canonical path or tag fingerprint.
+    // A future writer must re-probe it immediately before mutation.
+    std::string source_guard;
     std::string target_path;
     std::string target_key;
     FileAction action = FileAction::None;
