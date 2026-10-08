@@ -243,11 +243,13 @@ void show_sort_arrow(PreviewState& state) {
     for (int col = 0; col < djmeta::kBatchPreviewColumnCount; ++col) {
         HDITEMW header_item{};
         header_item.mask = HDI_FORMAT;
-        if (!Header_GetItemW(header, col, &header_item)) continue;
+        if (SendMessageW(header, HDM_GETITEMW, static_cast<WPARAM>(col),
+                reinterpret_cast<LPARAM>(&header_item)) == 0) continue;
         header_item.fmt &= ~(HDF_SORTUP | HDF_SORTDOWN);
         if (col == state.layout.sort_column)
             header_item.fmt |= state.layout.sort_descending ? HDF_SORTDOWN : HDF_SORTUP;
-        Header_SetItemW(header, col, &header_item);
+        SendMessageW(header, HDM_SETITEMW, static_cast<WPARAM>(col),
+            reinterpret_cast<LPARAM>(&header_item));
     }
 }
 
