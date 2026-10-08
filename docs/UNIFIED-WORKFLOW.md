@@ -72,6 +72,9 @@ For each physical source file, the planner eventually emits a single desired-sta
 - evaluated destination directory;
 - final target path;
 - file action: none / rename / move / copy;
+- effective naming/routing profile plus any explicit manual overrides;
+- associated external-cue/sidecar dependencies and proposed coordinated changes;
+- per-target overwrite decision and optional batch-scoped overwrite approval;
 - safety classification;
 - rule provenance;
 - conflict state.
@@ -89,8 +92,9 @@ The future apply gate must invalidate the plan when any relevant input changes, 
 - metadata fingerprint;
 - active ruleset revision;
 - source path;
-- naming/routing rule inputs;
-- computed target path.
+- naming/routing rule inputs, selected metadata proposals, selected route/action and manual overrides;
+- computed target path and associated companion-file plan;
+- overwrite decisions and batch-approval scope.
 
 A stale plan is never partially trusted.
 
@@ -100,8 +104,8 @@ Before the first mutation, the component evaluates the entire selected batch.
 
 Preflight must detect at minimum:
 
-- multiple sources targeting the same destination;
-- destination already exists;
+- multiple sources targeting the same destination (a distinct, non-overridable intra-batch ambiguity unless the user first resolves the mapping);
+- destination already exists (a reviewable overwrite conflict, not an unconditional prohibition);
 - source disappeared or moved;
 - illegal/unsupported target paths;
 - empty filename/directory outcomes;
@@ -132,6 +136,96 @@ After execution, the component shows a compact host-native result report with co
 - failed.
 
 The report is traceability, not an independent backup database.
+
+## Batch-scoped overwrite approvals
+
+The existing foobar File Operations presets include `overwrite=yes`. The replacement must preserve the **ability** to overwrite without silently inheriting an unsafe unconditional overwrite mode.
+
+- Default/ordinary operation: detect existing destinations and prominently warn in the unified preview and before final Apply; do not overwrite without approval.
+- Individual override: approve a specific already-existing target.
+- Bulk mode: approve **all explicitly enumerated overwrite conflicts in the reviewed batch with one deliberate confirmation**, without per-file prompts. The dialog states the number of destinations and which planned actions will replace data.
+- Approval is scoped to the current plan and to the conflict targets enumerated at approval time; it is not a persistent global `overwrite=true` switch.
+- A newly appearing destination, changed destination content, changed source, changed rule or changed plan is not implicitly covered by the old approval. Re-preflight/re-approval is required.
+- Two selected sources resolving to the same target are an ambiguous intra-batch collision: never choose a winner solely by processing order or the bulk overwrite checkbox. Require manual routing/naming adjustment or explicit removal of a conflicting source from the plan.
+- Non-overridable integrity gates (stale plan, unsafe physical/virtual tag mapping, ambiguous cue dependency, unverifiable file identity) remain enforced even in bulk mode.
+- Safe, independent approved operations run as a batch; errors are collected in the apply report. The executor must not promise cross-file atomicity that foobar's public SDK does not provide.
+
+The exact confirmation widgets should follow foobar's host UI conventions. This contract does not assert that the host exposes its native File Operations confirmation mechanism as a public SDK API.
+
+## Date field semantics and flexibility
+
+The initial user's established tagging convention is:
+
+- `DATE` normally contains a four-digit year (e.g. `1998`).
+- `DATE_RAW` is the separately retained original/full date when present (e.g. `1998-06-15`).
+
+This is a **default user/profile policy**, not a hardcoded global engine rule. The normalizer may recognize discrepancies or propose changes according to explicitly configured field rules, but it must not:
+
+- erase or truncate `DATE_RAW` merely because `DATE` is year-only;
+- silently replace a valid full `DATE_RAW` with the year;
+- invent day/month information not present in the source;
+- rewrite an existing `DATE` or `DATE_RAW` based on a naming convenience;
+- force other collections or profiles to use the same date representation.
+
+Host Title Formatting expressions may derive a year or other display component without changing the persisted metadata. User-defined/custom tags remain first-class inputs to rules, naming and routing.
+
+## Manual routing, naming and operation overrides
+
+Automatic Single/Album/Liveset inference is a **proposed route**, not an irreversible decision.
+
+At any time **before final Apply**, the user may override:
+
+- route/profile (e.g. Singles ↔ Alben ↔ Livesets);
+- output directory or per-item target path;
+- naming/title-format expression or evaluated proposed filename;
+- action (none / rename / move / copy);
+- selection of individual metadata proposals;
+- handling of companion files including external cues.
+
+Overrides may target one track/physical source, a multi-selection, or all tracks in the current batch. The preview distinguishes automatic inference from manual overrides.
+
+Each override triggers complete recomputation of every affected canonical/tag-dependent filename and path, conflict scan, cue/sidecar dependency mapping and **new plan fingerprint**. No manual override may bypass structural integrity checks.
+
+Routing ambiguity stays in REVIEW until the user resolves it; a manually selected destination is allowed even when automatic classification was uncertain. The user is never forced to accept a folder hierarchy dictated by the engine.
+
+Naming/routing profiles and host UI state use foobar configuration conventions; the shared rule engine stays the authority for metadata semantics.
+
+## External CUE and companion-file coordination
+
+Before a physical audio rename/move/copy, the planner must inspect related external `.cue` files wherever they are part of the selected source/companion operation, not only a matching basename guess.
+
+The plan must distinguish:
+
+- **External CUE**: a separate physical sidecar containing `FILE` references that may need updating;
+- **Embedded cuesheet**: cue data stored in the audio container, handled under the separate physical/virtual metadata safety gate;
+- **Other companion files** (artwork, logs, etc.): include only with a reviewed companion-file policy, not an uncontrolled `moveOtherFiles` clone.
+
+For a qualified, unambiguous external CUE relation, expose user-selectable behavior:
+
+- keep the CUE filename, but repair its `FILE` references when needed;
+- rename the CUE alongside the related audio (e.g. the same basename), with references kept valid;
+- use a separate foobar Title-Formatting naming expression for the CUE;
+- leave the companion file untouched **only when that choice cannot create an invalid reference**; otherwise flag/block it;
+- explicitly exclude the operation or source from the batch.
+
+The default should prefer a safe, minimal coordinated update with a clear preview. Auto-selected choices remain manually editable for individual entries or whole batches.
+
+CUE qualification must include: relative vs absolute `FILE` targets, multiple `FILE` directives and audio files, quoted/escaped paths, encodings, newline preservation, source/target collisions, and existing cue fields/timing/track structure. Unknown syntax, ambiguous linkage, unsafe encoding round-trips or changed source files cause REVIEW or a hard stop; never silently rewrite/drop structural cue data.
+
+When `moveOtherFiles=yes` or `removeEmpty=yes` is present in a source foobar preset, reflect that behavior in the sidecar/dependency preview, but do not blindly move unrelated files or remove folders containing unresolved dependencies. Directory cleanup takes place only after all relevant actions have completed successfully.
+
+## Acceptance scenarios for the eventual UI and executor
+
+1. One existing destination -> clear warning, user may approve just this overwrite.
+2. 100 existing destinations -> one explicit batch overwrite approval, no 100 popups; every target is listed and bound to the approved plan.
+3. A new collision occurs after approval -> cannot overwrite on the old approval; refresh/review required.
+4. Two selected sources produce the same target -> bulk overwrite approval is not sufficient; user fixes routing/selection.
+5. `DATE=1998`, `DATE_RAW=1998-06-15` -> neither loses information because the other is used in folder naming.
+6. Album auto-routed as Single -> user selects Alben, target path/filename and conflicts recalculate before Apply.
+7. A renamed audio file has one qualified external CUE reference -> the preview includes selectable cue rename/reference-repair options.
+8. A CUE references several physical audio files -> never treat it as a trivial one-audio basename rename.
+9. Missing/malformed/unqualified CUE relations -> no automatic destructive rename/move/copy.
+10. Approved operations preserve host-defined time/timestamp behavior where SDK policy can actually be inherited; undocumented behavior is not assumed.
 
 ## Write ordering
 
