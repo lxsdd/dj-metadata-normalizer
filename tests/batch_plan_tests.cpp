@@ -71,6 +71,28 @@ void test_ready_and_immutable() {
             "routing profile edit must change plan");
 }
 
+void test_large_batch_one_confirmation() {
+    std::vector<djmeta::FilePlanItem> batch;
+    for (int i = 0; i < 100; ++i) {
+        auto item = audio("Track" + std::to_string(i));
+        item.target_presence = djmeta::TargetPresence::Existing;
+        item.target_guard = "guard-" + std::to_string(i);
+        batch.push_back(std::move(item));
+    }
+    const auto preview = djmeta::review_batch_plan(batch);
+    require(preview.requires_overwrite == 100 &&
+            !preview.ready_to_apply && preview.blocked == 0,
+            "100 existing targets should yield 100 visible warnings, not blocks");
+
+    const djmeta::BatchApproval approval{preview.plan_fingerprint, true};
+    const auto approved = djmeta::review_batch_plan(batch, &approval);
+    require(approved.ready_to_apply && approved.requires_overwrite == 100,
+            "one batch-wide approval should approve all 100 reviewed replacements");
+    for (const auto& item : approved.decisions)
+        require(item.will_replace_existing_target,
+                "all 100 reviewed replacements should be approved");
+}
+
 void test_batch_overwrite_once_and_target_guard() {
     auto a = audio("A");
     auto b = audio("B");
@@ -214,6 +236,32 @@ void test_external_cue_dependencies() {
             "unverified CUE source bytes must block operation");
 }
 
+void test_companion_files_need_explicit_or_qualified_policy() {
+    auto a = audio("A");
+    djmeta::FilePlanItem art;
+    art.physical_id = "art-A";
+    art.source_path = "Z:/Music/Downloads/cover.jpg";
+    art.source_key = "z:/music/downloads/cover.jpg";
+    art.target_path = "Z:/Music/Singles/cover.jpg";
+    art.target_key = "z:/music/singles/cover.jpg";
+    art.action = djmeta::FileAction::Move;
+    art.role = djmeta::FileRole::Companion;
+    art.associated_audio_id = a.physical_id;
+    art.ruleset_revision = a.ruleset_revision;
+    art.target_presence = djmeta::TargetPresence::Missing;
+
+    const auto unapproved = djmeta::review_batch_plan({a, art});
+    require(has_reason(unapproved.decisions[1], "COMPANION_NOT_AUTHORIZED"),
+            "legacy moveOtherFiles must not authorize unrelated sidecars");
+    art.manual_override = true;
+    const auto approved = djmeta::review_batch_plan({a, art});
+    require(approved.ready_to_apply, "explicitly selected artwork may be planned");
+    art.manual_override = false;
+    art.companion_policy_qualified = true;
+    const auto by_policy = djmeta::review_batch_plan({a, art});
+    require(by_policy.ready_to_apply, "qualified companion policy should be usable");
+}
+
 void test_noop_and_missing_ids() {
     auto a = audio("A");
     a.target_key = a.source_key;
@@ -239,11 +287,13 @@ void test_noop_and_missing_ids() {
 int main() {
     test_ready_and_immutable();
     test_batch_overwrite_once_and_target_guard();
+    test_large_batch_one_confirmation();
     test_missing_target_guard_and_no_inspection();
     test_intra_batch_conflicts_cannot_be_overridden();
     test_duplicate_subsong_source_and_self_copy();
     test_external_cue_dependencies();
     test_noop_and_missing_ids();
+    test_companion_files_need_explicit_or_qualified_policy();
     std::cout << "PASS: deterministic read-only batch plan preflight tests\n";
     return 0;
 }
