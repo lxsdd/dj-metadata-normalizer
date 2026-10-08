@@ -32,6 +32,7 @@ std::string plan_fingerprint(const std::vector<FilePlanItem>& items) {
             item.ruleset_revision,
             item.routing_profile, item.naming_expression,
             yesno(item.manual_override),
+            yesno(item.companion_policy_qualified),
             decimal(static_cast<int>(item.target_presence)),
             item.target_guard, yesno(item.individual_overwrite_approved),
             decimal(static_cast<int>(item.cue_links)),
@@ -122,6 +123,11 @@ BatchPlanReview review_batch_plan(
                        cue_counts[item.physical_id] == 0) {
                 block(decision, "VERIFIED_CUE_NOT_IN_PLAN");
             }
+        } else if (item.role == FileRole::Companion) {
+            if (item.associated_audio_id.empty() ||
+                audio_ids.count(item.associated_audio_id) == 0 ||
+                (!item.companion_policy_qualified && !item.manual_override))
+                block(decision, "COMPANION_NOT_AUTHORIZED");
         } else if (item.role == FileRole::ExternalCue) {
             if (item.associated_audio_id.empty() ||
                 audio_ids.count(item.associated_audio_id) == 0 ||
