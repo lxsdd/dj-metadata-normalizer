@@ -10,7 +10,7 @@ namespace {
 contextmenu_group_popup_factory g_context_group(
     guids::context_group,
     contextmenu_groups::root,
-    "DJ Library",
+    "DJ Metadata Normalizer",
     0);
 
 class normalizer_context_menu : public contextmenu_item_simple {
