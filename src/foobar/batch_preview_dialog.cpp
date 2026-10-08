@@ -294,11 +294,13 @@ void update_metadata_table(PreviewState& state) {
     if (state.dialog && state.show_metadata &&
         state.selected_track_index < state.track_summaries.size()) {
         const auto& summary = state.track_summaries[state.selected_track_index];
-        const std::wstring notice =
+        std::wstring notice =
             L"Selected track: " + std::to_wstring(summary.music_changes) +
             L" music, " + std::to_wstring(summary.extended_changes) +
             L" extended; " + std::to_wstring(summary.review_required) +
             L" need review. Preview only; no tags were written.";
+        if (state.focused_metadata_rows.empty())
+            notice += L" No proposed changes in this view.";
         SetDlgItemTextW(state.dialog, IDC_BATCH_HINT, notice.c_str());
     } else if (state.dialog && state.show_metadata) {
         SetDlgItemTextW(state.dialog, IDC_BATCH_HINT,
