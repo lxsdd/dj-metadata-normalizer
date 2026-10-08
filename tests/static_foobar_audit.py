@@ -95,9 +95,9 @@ for label, token in {
     if token not in source:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: route preview missing " + label)
 for token in [
-    r"Z:\\Music\\Singles",
-    r"Z:\\Music\\Alben",
-    r"Z:\\Music\\Livesets",
+    r"Z:\Music\${k}",
+    r"Z:\Music\${k}",
+    r"Z:\Music\${k}",
     "%album artist%/%album%/%artist% - %title%",
     "%album artist%/%album%[ '('%date%')']/%tracknumber%. %artist% - %title%",
 ]:
