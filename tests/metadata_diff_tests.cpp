@@ -21,6 +21,9 @@ int main() {
     const auto inputs=std::vector<djmeta::AnalysisResult>{a,b};
     auto rows=djmeta::describe_metadata_diffs(inputs);
     require(rows.size()==3,"skip no-ops and preserve source identities");
+    require(rows[0].proposal_index==0 && rows[1].proposal_index==1 &&
+            rows[2].proposal_index==0,
+            "flattened rows preserve proposal identity across source and no-op gaps");
     require(rows[0].source_index==0 && rows[0].field=="TITLE" &&
             rows[0].original==" Song (Mix) " && rows[0].proposed=="Song" &&
             rows[0].safety==djmeta::SafetyClass::Review,
