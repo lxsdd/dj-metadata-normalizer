@@ -33,6 +33,9 @@ in virtual (LVS_OWNERDATA) mode.
 - Never hide the final visible column.
 - Reset column layout restores the original order, widths, visibility
   and default sorting.
+- The modal is resizable; the virtual table expands in both dimensions and
+  the lower route editor/status/action controls stay bottom-aligned. Its
+  minimum size is the original dialog template size.
 
 ### Persistence
 
