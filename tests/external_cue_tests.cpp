@@ -55,7 +55,48 @@ void unsafe_and_unsupported() {
     const auto nul = inspect_external_cue(std::string("FILE \"",6) + std::string(1,'\0') + "x\" WAVE\n");
     check(nul.status == CueSyntaxStatus::NeedsReview);
 }
+void rewrite_preview_preserves_unrelated_bytes() {
+    const std::string input = "REM GENRE House\r\n"
+        "FILE \"old.flac\" WAVE\r\n"
+        "  TRACK 01 AUDIO\r\n"
+        "  INDEX 01 00:00:00\r\n";
+    const auto out = djmeta::preview_external_cue_reference_rewrite(
+        input, {{0, "old.flac", "Artist - Album.flac"}});
+    check(out.eligible && out.changed);
+    check(out.proposed_bytes == "REM GENRE House\r\n"
+        "FILE \"Artist - Album.flac\" WAVE\r\n"
+        "  TRACK 01 AUDIO\r\n"
+        "  INDEX 01 00:00:00\r\n");
+    check(input.find("old.flac") != std::string::npos);
+}
+void rewrite_preview_multifile_and_quotes() {
+    const std::string input = "FILE old1.flac WAVE\nFILE old2.flac WAVE\n";
+    const auto out = djmeta::preview_external_cue_reference_rewrite(
+        input, {{1, "old2.flac", "New Title.flac"}});
+    check(out.eligible && out.changed);
+    check(out.proposed_bytes == "FILE old1.flac WAVE\nFILE \"New Title.flac\" WAVE\n");
+
+    const auto unchanged = djmeta::preview_external_cue_reference_rewrite(input, {});
+    check(unchanged.eligible && !unchanged.changed && unchanged.proposed_bytes == input);
+}
+void rewrite_preview_rejects_stale_or_unsafe() {
+    const std::string input = "FILE \"old.flac\" WAVE\n";
+    check(!djmeta::preview_external_cue_reference_rewrite(
+        input, {{0, "different.flac", "new.flac"}}).eligible);
+    check(!djmeta::preview_external_cue_reference_rewrite(
+        input, {{5, "old.flac", "new.flac"}}).eligible);
+    check(!djmeta::preview_external_cue_reference_rewrite(
+        input, {{0, "old.flac", "new.flac"}, {0, "old.flac", "x.flac"}}).eligible);
+    check(!djmeta::preview_external_cue_reference_rewrite(
+        input, {{0, "old.flac", "unsafe\nFILE \"evil.flac\" WAVE"}}).eligible);
+    check(!djmeta::preview_external_cue_reference_rewrite(
+        input, {{0, "old.flac", "quote\"name.flac"}}).eligible);
+    check(!djmeta::preview_external_cue_reference_rewrite(
+        "FILE \"C:\\old.flac\" WAVE\n", {{0, "C:\\old.flac", "safe.flac"}}).eligible);
+}
 int main() {
     basic_crlf(); multi_file_and_lf(); unicode_bom_and_offsets(); unsafe_and_unsupported();
-    std::cout << "PASS: external CUE inventory (read-only) 4 suites\n";
+    rewrite_preview_preserves_unrelated_bytes(); rewrite_preview_multifile_and_quotes();
+    rewrite_preview_rejects_stale_or_unsafe();
+    std::cout << "PASS: external CUE inventory (read-only) 7 suites\n";
 }
