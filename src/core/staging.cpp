@@ -1,6 +1,9 @@
 #include "djmeta/staging.h"
+#include "djmeta/structural_guard.h"
 
 #include <stdexcept>
+#include <set>
+#include <utility>
 
 namespace djmeta {
 
@@ -10,24 +13,36 @@ StagedMetadata stage_safe_only(
     if (fingerprint(original) != analysis.input_fingerprint)
         throw std::invalid_argument("staging input no longer matches analysis fingerprint");
 
+    // Validate ALL proposal identities before constructing output. A REVIEW
+    // proposal cannot evade invalid source checks by being deferred, and
+    // duplicate targets must not create order-dependent behavior.
+    std::set<std::pair<std::size_t, std::size_t>> targets;
+    for (const Proposal& proposal : analysis.proposals) {
+        if (proposal.field_index >= original.fields.size())
+            throw std::invalid_argument("staging proposal field index out of range");
+        const MetadataField& source = original.fields[proposal.field_index];
+        if (source.name != proposal.field ||
+            proposal.value_index >= source.values.size() ||
+            source.values[proposal.value_index] != proposal.original_value)
+            throw std::invalid_argument("staging proposal does not match original field/value");
+        if (!targets.emplace(proposal.field_index, proposal.value_index).second)
+            throw std::invalid_argument("staging has duplicate field/value proposals");
+        if (is_protected_cue_metadata(source.name))
+            throw std::invalid_argument("embedded CUE must use a dedicated editor");
+        if (proposal.safety == SafetyClass::Safe &&
+            !safe_scalar_metadata_field(source.name, proposal.original_value))
+            throw std::invalid_argument("unsafe automatic edit of structural metadata");
+    }
+
     StagedMetadata staged;
     staged.document = original;
-
     for (const Proposal& proposal : analysis.proposals) {
         if (proposal.safety != SafetyClass::Safe) {
             ++staged.unresolved_proposals;
             continue;
         }
-        if (proposal.field_index >= staged.document.fields.size())
-            throw std::invalid_argument("SAFE proposal field index out of range");
-
-        MetadataField& field = staged.document.fields[proposal.field_index];
-        if (field.name != proposal.field ||
-            proposal.value_index >= field.values.size() ||
-            field.values[proposal.value_index] != proposal.original_value)
-            throw std::invalid_argument("SAFE proposal identity does not match original metadata");
-
-        field.values[proposal.value_index] = proposal.proposed_value;
+        staged.document.fields[proposal.field_index].values[proposal.value_index] =
+            proposal.proposed_value;
         ++staged.safe_proposals_applied;
     }
     return staged;
