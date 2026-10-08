@@ -9,12 +9,12 @@ sources = "\\n".join(
 )
 
 required = {
-    "preview menu": "Metadaten normalisieren (Vorschau)",
+    "preview menu": "Normalize metadata (Preview)",
     "async metadata load": "load_info_async",
     "read-only shared rules": "GENERIC_READ",
     "existing-file rules open": "OPEN_EXISTING",
     "shared rules path": "DJMetadataNormalizer",
-    "explicit no-write UX": "Es wurden keine Tags geschrieben",
+    "explicit no-write UX": "No tags were written",
 }
 missing = [name for name, token in required.items() if token not in sources]
 if missing:
@@ -51,7 +51,7 @@ preview = (foobar / "preview.cpp").read_text(encoding="utf-8")
 for token in [
     "item.result.input_fingerprint",
     "djmeta::fingerprint(current)",
-    "Die Vorschau wurde als veraltet verworfen",
+    "The preview is stale",
 ]:
     if token not in preview:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: stale-input preview guard missing " + token)
@@ -86,10 +86,10 @@ legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf
 resources = (foobar / "component.rc").read_text(encoding="utf-8")
 
 for label, source, token in [
-    ("default Singles caption", menu_settings, "Vorbereiten: Singles (Vorschau)"),
-    ("default Alben caption", menu_settings, "Vorbereiten: Alben (Vorschau)"),
-    ("default Livesets caption", menu_settings, "Vorbereiten: Livesets (Vorschau)"),
-    ("default main caption", menu_settings, "Tracks vorbereiten (Vorschau)"),
+    ("default Singles caption", menu_settings, "Prepare: Singles (Preview)"),
+    ("default Alben caption", menu_settings, "Prepare: Albums (Preview)"),
+    ("default Livesets caption", menu_settings, "Prepare: Live Sets (Preview)"),
+    ("default main caption", menu_settings, "Prepare Tracks (Preview)"),
     ("cfg-backed captions", menu_settings, "cfg_string"),
     ("stable individual caption GUID", menu_settings, "guid_caption_primary"),
     ("dynamic captions", route_menu, "effective_menu_caption(index)"),
@@ -115,10 +115,27 @@ for label, source, token in [
     ("stale metadata guard", route_preview, "djmeta::fingerprint(latest)"),
     ("subsong physical guard", route_preview, "get_subsong_index() != 0"),
     ("raw target duplicate warning", route_preview, "raw_target_counts"),
-    ("no-write banner", route_preview, "Es wurden keine Tags geschrieben"),
+    ("no-write banner", route_preview, "No tags were written"),
 ]:
     if token not in source:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing " + label)
+
+# Product policy: every built-in user-visible label must be English.
+# Original media tags / externally supplied routing profile values may
+# legitimately use other languages and must never be transliterated.
+non_english_ui_literals = [
+    "Metadaten normalisieren", "Tracks vorbereiten",
+    "Vorbereiten:", "Die Vorschau", "Es wurden keine",
+    "Zielordner:", "Dateinamensmuster:",
+]
+for ui_file in ("preview.cpp", "routing_preview.cpp", "prepare_dialog.cpp",
+                "context_menu.cpp", "menu_preferences.cpp", "menu_settings.cpp",
+                "component.rc"):
+    text = (foobar / ui_file).read_text(encoding="utf-8")
+    for forbidden_ui in non_english_ui_literals:
+        if forbidden_ui in text:
+            raise SystemExit("STATIC FOOBAR AUDIT FAIL: non-English UI in " +
+                             ui_file + ": " + forbidden_ui)
 
 if "contextmenu_item::FORCE_OFF" in route_menu:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: host visibility disabled")
