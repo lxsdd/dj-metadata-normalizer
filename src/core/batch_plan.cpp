@@ -109,6 +109,13 @@ BatchPlanReview review_batch_plan(
     const bool blanket_overwrite =
         approval != nullptr && !stale_approval &&
         approval->approve_all_observed_overwrites;
+    // Build once: linear searches for each existing target used to make
+    // individually approved large batches O(N * approval_count).
+    std::set<std::string> individually_approved;
+    if (approval && !stale_approval)
+        individually_approved.insert(
+            approval->individually_approved_physical_ids.begin(),
+            approval->individually_approved_physical_ids.end());
 
     std::map<std::string, std::size_t> source_key_counts;
     std::map<std::string, std::size_t> physical_id_counts;
@@ -261,14 +268,10 @@ BatchPlanReview review_batch_plan(
                     block(decision, "EXISTING_TARGET_NOT_GUARDED");
                 } else {
                     ++review.requires_overwrite;
-                    const bool individually_approved = approval != nullptr &&
-                        !stale_approval &&
-                        std::find(approval->individually_approved_physical_ids.begin(),
-                                  approval->individually_approved_physical_ids.end(),
-                                  item.physical_id) !=
-                            approval->individually_approved_physical_ids.end();
+                    const bool approved_one =
+                        individually_approved.count(item.physical_id) != 0;
                     const bool overwrite_allowed =
-                        individually_approved || blanket_overwrite;
+                        approved_one || blanket_overwrite;
                     if (overwrite_allowed) {
                         decision.will_replace_existing_target = true;
                     } else if (decision.status != PlanStatus::Blocked) {
