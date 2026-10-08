@@ -2,6 +2,7 @@
 #include "djmeta/structural_guard.h"
 
 #include <map>
+#include <set>
 #include <string_view>
 #include <string>
 #include <vector>
@@ -58,6 +59,15 @@ BatchPreviewTable describe_batch_preview(
     BatchPreviewTable out;
     out.rows.resize(items.size());
     std::map<std::string, std::size_t> counts;
+    std::map<std::string, std::size_t> observed_target_key_counts;
+    std::set<std::string> observed_source_keys;
+    for (const auto& item : items) {
+        if (item.physical_source_qualified && !item.source_physical_key.empty())
+            observed_source_keys.insert(item.source_physical_key);
+        if (item.raw_target_presence == RawTargetPresence::Existing &&
+            !item.raw_target_physical_key.empty() && !item.raw_target_guard.empty())
+            ++observed_target_key_counts[item.raw_target_physical_key];
+    }
     // Deliberately raw, case-sensitive counts only. Windows canonicalization
     // remains a responsibility of the future foobar host filesystem planner.
     for (const auto& item : items) {
@@ -69,6 +79,7 @@ BatchPreviewTable describe_batch_preview(
     for (std::size_t i = 0; i < items.size(); ++i) {
         const auto& item = items[i];
         auto& row = out.rows[i];
+        row.raw_target_presence = item.raw_target_presence;
         if (!item.destination_root.empty() && !item.raw_relative_path.empty())
             row.raw_destination =
                 item.destination_root + "\\" + item.raw_relative_path;
@@ -82,6 +93,31 @@ BatchPreviewTable describe_batch_preview(
             row.has_raw_target_collision = true;
             row.issues.emplace_back("DUPLICATE_RAW_TARGET");
             ++out.raw_collision_items;
+        }
+        // These findings concern the unsanitized raw candidate only. A
+        // real host-resolved destination may be different and MUST receive
+        // its own independent preflight before any future file operation.
+        switch (item.raw_target_presence) {
+        case RawTargetPresence::NotInspected:
+        case RawTargetPresence::Missing:
+            break;
+        case RawTargetPresence::Existing:
+            if (item.raw_target_physical_key.empty() || item.raw_target_guard.empty())
+                row.issues.emplace_back("RAW_TARGET_PROBE_UNQUALIFIED");
+            else if (!item.source_physical_key.empty() &&
+                     item.source_physical_key == item.raw_target_physical_key)
+                row.issues.emplace_back("RAW_TARGET_ALIASES_SOURCE");
+            else if (observed_source_keys.count(item.raw_target_physical_key) != 0)
+                row.issues.emplace_back("RAW_TARGET_IS_BATCH_SOURCE");
+            else if (observed_target_key_counts[item.raw_target_physical_key] > 1)
+                row.issues.emplace_back("RAW_TARGET_SHARED_PHYSICAL_ID");
+            else
+                row.issues.emplace_back("RAW_TARGET_EXISTS");
+            break;
+        case RawTargetPresence::Unqualified:
+        default:
+            row.issues.emplace_back("RAW_TARGET_PROBE_UNQUALIFIED");
+            break;
         }
         if (item.semantic_proposals_pending)
             row.issues.emplace_back("UNAPPROVED_METADATA_PROPOSALS");

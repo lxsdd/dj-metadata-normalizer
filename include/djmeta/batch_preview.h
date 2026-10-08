@@ -7,6 +7,10 @@
 
 namespace djmeta {
 
+// Preliminary observation of the literal/raw candidate path only. It must
+// never be confused with a foobar File Operations sanitized/final destination.
+enum class RawTargetPresence { NotInspected, Missing, Existing, Unqualified };
+
 // The table explicitly displays unqualified operations; raw Title Formatting
 // paths are NOT proof of a valid final foobar File Operations destination.
 struct BatchPreviewInputRow {
@@ -15,6 +19,10 @@ struct BatchPreviewInputRow {
     std::string profile;
     std::string destination_root;
     std::string raw_relative_path;
+    RawTargetPresence raw_target_presence = RawTargetPresence::NotInspected;
+    std::string source_physical_key; // genuine host-observed source identity
+    std::string raw_target_physical_key; // genuine host-observed target identity, when existing
+    std::string raw_target_guard; // observed target state, not overwrite approval
     bool physical_source_qualified = false;
     bool semantic_proposals_pending = false;
     bool cue_dependencies_checked = false;
@@ -25,6 +33,7 @@ struct BatchPreviewRow {
     std::string raw_destination;
     std::vector<std::string> issues; // ordered; first is most urgent
     bool has_raw_target_collision = false;
+    RawTargetPresence raw_target_presence = RawTargetPresence::NotInspected;
 };
 
 struct BatchPreviewTable {

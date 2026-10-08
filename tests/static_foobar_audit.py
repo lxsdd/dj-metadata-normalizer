@@ -86,6 +86,15 @@ for token in ("GENERIC_WRITE", "CREATE_ALWAYS", "CREATE_NEW", "TRUNCATE_EXISTING
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: mutating host probe: " + token)
 if "djmeta::qualify_physical_selection(evidence)" not in batch_rules_guard:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing physical-identity collision gate")
+for token in (
+    "inspect_selected_raw_targets(dialog, *state)",
+    "probe_host_file_readonly(raw_candidate)",
+    "reset_raw_target_observation(entry)",
+    "input.filesystem_target_checked = false; // invariant: final target unknown",
+    "raw_relative_path_lexically_safe(entry.input.raw_relative_path)",
+):
+    if token not in batch_rules_guard:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing raw candidate isolation: " + token)
 
 planner = (foobar / "titleformat_planner.cpp").read_text(encoding="utf-8")
 for token in [
