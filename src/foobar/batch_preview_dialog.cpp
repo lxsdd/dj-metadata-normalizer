@@ -290,7 +290,8 @@ void update_metadata_table(PreviewState& state) {
             LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
         InvalidateRect(state.metadata_list, nullptr, FALSE);
     }
-    if (state.dialog && state.show_metadata) {
+    if (state.dialog && state.show_metadata &&
+        state.selected_track_index < state.track_summaries.size()) {
         const auto& summary = state.track_summaries[state.selected_track_index];
         const std::wstring notice =
             L"Selected track: " + std::to_wstring(summary.music_changes) +
@@ -886,6 +887,8 @@ void show_batch_preview_dialog(
         state.current_choice = initial_choice;
         state.entries = capture_preview(handles, initial_choice, state.analyses);
         state.metadata_rows = djmeta::describe_metadata_diffs(state.analyses);
+        state.track_summaries = djmeta::summarize_track_changes(
+            state.entries.size(), state.metadata_rows);
         for (const auto& item : state.entries)
             state.source_labels.push_back(item.input.source_path);
         update_table(state);
