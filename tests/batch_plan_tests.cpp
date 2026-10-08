@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -123,11 +124,18 @@ void test_batch_overwrite_once_and_target_guard() {
             "changed destination guard must invalidate entire approval");
 
     batch = {a, b};
-    batch[0].individual_overwrite_approved = true;
-    const auto mixed = djmeta::review_batch_plan(batch);
+    djmeta::BatchApproval individual{
+        djmeta::review_batch_plan(batch).plan_fingerprint, false, {"A"}};
+    const auto mixed = djmeta::review_batch_plan(batch, &individual);
     require(mixed.decisions[0].status == djmeta::PlanStatus::Ready &&
             mixed.decisions[1].status == djmeta::PlanStatus::NeedsOverwriteApproval,
             "per-item consent must remain available");
+
+    batch[0].target_guard += "-updated";
+    const auto stale_individual = djmeta::review_batch_plan(batch, &individual);
+    require(stale_individual.blocked == 2 &&
+            !stale_individual.decisions[0].will_replace_existing_target,
+            "per-item overwrite approval must also be guarded by plan fingerprint");
 }
 
 void test_missing_target_guard_and_no_inspection() {
