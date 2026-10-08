@@ -384,3 +384,34 @@ foobar may legitimately repair a raw filename in its native File Operations
 dialog. Such paths remain REVIEW/unqualified until a read-only adapter can
 compare the **actual host-resolved post-sanitization destination** and its
 filesystem identity. The existing destination and CUE gates remain in force.
+
+### Optional on-demand raw candidate destination inspection
+
+The File locations view now supports **right-click selected rows → Inspect
+selected raw targets (read-only)**. It can inspect only the current raw
+Title Formatting candidate path, not foobar File Operations' eventual
+sanitized path or automatically appended extension. The optional probe
+reuses the SDK-canonical/Win32 read-only host file observation, and reports:
+
+- raw candidate absent (observed at that instant; not a promise it stays absent);
+- existing raw candidate with guarded physical identity (never overwrite consent);
+- existing raw candidate that aliases the same or another selected source;
+- distinct raw candidates that alias one existing physical target via hardlinks;
+- unqualified inspection, e.g. inaccessible/reparse/unsupported paths.
+
+The user must first apply any route-form edits to the **preview only**.
+The operation verifies current source guards, all metadata snapshots and the
+rules snapshot and publishes results only when the entire requested subset
+is consistent. Preview sorting does not change the selected underlying track
+identities. Changed metadata/naming/routing invalidates the provisional
+target observations. These results are visible in native row statuses and
+tooltips, but never make `filesystem_target_checked` true; external-CUE
+qualification is independent and also remains false.
+
+This provisional check is deliberately **opt-in** so merely scrolling/sorting
+large libraries does not trigger more filesystem I/O. The synchronous GUI
+action is temporarily bounded to 128 selected candidates per invocation,
+pending a qualified asynchronous, cancelable, SDK-backed bulk preflight.
+The final host File Operations path, source-extension behavior, timestamp
+policy, collisions and CUE repair still require independent qualification
+before any executable plan is available. No file writer was introduced.
