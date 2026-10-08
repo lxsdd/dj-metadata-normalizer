@@ -266,6 +266,58 @@ void test_persisted_ruleset_loader() {
         "semantic replacement was accepted as SAFE");
 }
 
+void test_disabled_semantic_candidates_are_opt_in() {
+    const auto candidates = djmeta::parse_ruleset_json(
+        read_text("rules/examples/semantic-review-candidates.json"));
+    require(candidates.schema_version == 2 &&
+            candidates.id == "lxsdd.dj-metadata-normalizer.semantic-candidates" &&
+            candidates.rules.size() == 6, "illustrative semantic candidates schema changed");
+    for (const auto& rule : candidates.rules) {
+        require(!rule.enabled, "semantic example must be disabled by default");
+        require(rule.safety == djmeta::SafetyClass::Review,
+                "semantic example must require REVIEW, never SAFE/CONFIDENT");
+        require(rule.match == djmeta::MatchKind::Exact &&
+                rule.transform == djmeta::TransformKind::ReplaceWith,
+                "semantic examples must match whole values exactly");
+    }
+
+    const djmeta::MetadataDocument source{{
+        {"ARTIST", {"Example Artist Alias", "Unrelated Artist"}},
+        {"LABEL", {"Example Label Records"}},
+        {"TITLE", {"Example Track (Original Mix)"}},
+        {"VERSION", {"Orig. Mix"}},
+        {"GENRE", {"Example House Subgenre"}},
+        {"ARTIST", {"Artist A feat. Artist B"}}
+    }};
+    const auto original_fingerprint = djmeta::fingerprint(source);
+    const auto untouched = djmeta::Engine{}.analyze(
+        source, candidates.rules, candidates.revision);
+    require(untouched.proposals.empty() && untouched.changes.empty() &&
+            untouched.canonical_preview == source,
+            "disabled semantic candidates modified the preview");
+
+    auto enabled_rules = candidates.rules;
+    for (auto& rule : enabled_rules) rule.enabled = true;
+    const auto reviewed = djmeta::Engine{}.analyze(
+        source, enabled_rules, candidates.revision);
+    require(reviewed.proposals.size() == enabled_rules.size(),
+            "each enabled exact semantic candidate must emit one proposal");
+    for (const auto& item : reviewed.proposals)
+        require(item.safety == djmeta::SafetyClass::Review &&
+                item.rule_ids.size() == 1 && !item.rationales.empty(),
+                "semantic proposal must retain review safety and provenance");
+    require(reviewed.canonical_preview.fields[0].values.size() == 2 &&
+            reviewed.canonical_preview.fields[0].values[1] == "Unrelated Artist",
+            "unrelated multivalue artist must be preserved");
+    require(reviewed.canonical_preview.fields.back().values.size() == 1 &&
+            reviewed.canonical_preview.fields.back().values[0] == "Artist A; Artist B",
+            "literal feat example must not silently create real multivalue tags");
+    require(djmeta::fingerprint(source) == original_fingerprint,
+            "opt-in semantic analysis mutated source metadata");
+    require(reviewed.ruleset_revision == candidates.revision,
+            "rule revision provenance lost in semantic analysis");
+}
+
 void test_fingerprint_contract() {
     const djmeta::MetadataDocument a{{{"ARTIST", {"A", "B"}}, {"TITLE", {"Track"}}}};
     const djmeta::MetadataDocument b = a;
@@ -294,6 +346,7 @@ int main() {
     test_bridge_metadata_vector_loader();
     test_persisted_ruleset_loader();
     test_fingerprint_contract();
+    test_disabled_semantic_candidates_are_opt_in();
     std::cout << "PASS: djmeta core deterministic preview tests\n";
     return 0;
 }
