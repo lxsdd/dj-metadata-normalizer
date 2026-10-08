@@ -962,6 +962,12 @@ void inspect_selected_raw_targets(HWND dialog, PreviewState& state) {
     }
     if (selected.empty())
         throw std::invalid_argument("Select raw destination rows before inspection.");
+    // Until the SDK-backed async/batch target probe is qualified, keep
+    // explicit GUI-thread filesystem reads bounded on slow network drives.
+    if (selected.size() > 128)
+        throw std::invalid_argument(
+            "Select at most 128 raw candidates per preview inspection. "
+            "Large-batch asynchronous host inspection is not qualified yet.");
     verify_rules_snapshot(state.captured_rules);
 
     struct RawObservation {
