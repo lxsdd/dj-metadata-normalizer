@@ -58,6 +58,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\core\normalizer.cpp" />
+    <ClCompile Include="src\core\physical_selection.cpp" />
     <ClCompile Include="src\core\staging.cpp" />
     <ClCompile Include="src\core\routing_overrides.cpp" />
     <ClCompile Include="src\core\batch_preview.cpp" />
@@ -69,6 +70,7 @@
     <ClCompile Include="src\foobar\component.cpp" />
     <ClCompile Include="src\foobar\context_menu.cpp" />
     <ClCompile Include="src\foobar\metadata_adapter.cpp" />
+    <ClCompile Include="src\foobar\host_file_probe.cpp" />
     <ClCompile Include="src\foobar\preview.cpp" />
     <ClCompile Include="src\foobar\rules_runtime.cpp" />
     <ClCompile Include="src\foobar\titleformat_planner.cpp" />
@@ -81,6 +83,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\djmeta\normalizer.h" />
+    <ClInclude Include="include\djmeta\physical_selection.h" />
     <ClInclude Include="include\djmeta\staging.h" />
     <ClInclude Include="include\djmeta\batch_plan.h" />
     <ClInclude Include="include\djmeta\routing_overrides.h" />
@@ -92,6 +95,7 @@
     <ClInclude Include="include\djmeta\rule_loader.h" />
     <ClInclude Include="src\foobar\guid.h" />
     <ClInclude Include="src\foobar\metadata_adapter.h" />
+    <ClInclude Include="src\foobar\host_file_probe.h" />
     <ClInclude Include="src\foobar\preview.h" />
     <ClInclude Include="src\foobar\resource.h" />
     <ClInclude Include="src\foobar\rules_runtime.h" />
