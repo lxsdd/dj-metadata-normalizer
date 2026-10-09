@@ -117,6 +117,15 @@ int main() {
           mb_load_rect.right > mb_load_rect.left,
           "MusicBrainz search action does not overlay text query");
 
+    HWND online_details=GetDlgItem(dialog,IDC_METADATA_MB_DETAILS);
+    HWND online_detail_label=GetDlgItem(dialog,IDC_METADATA_MB_DETAIL_LABEL);
+    check(online_details && online_detail_label,
+          "new production MusicBrainz nested field pane and label exist");
+    const DWORD detail_style=static_cast<DWORD>(GetWindowLongPtrW(
+        online_details,GWL_STYLE));
+    check((detail_style & LVS_REPORT)==LVS_REPORT &&
+          (detail_style & LVS_OWNERDATA)==0,
+          "selected candidate details have normal independent native ListView rows");
     HWND cue_inspect = GetDlgItem(dialog, IDC_METADATA_INSPECT_CUE);
     check(cue_inspect != nullptr,
           "production read-only CUE inspect button exists in real dialog resource");
@@ -234,8 +243,10 @@ int main() {
     const DWORD dialog_style = static_cast<DWORD>(
         GetWindowLongPtrW(dialog, GWL_STYLE));
     check((dialog_style & WS_CLIPCHILDREN) != 0 &&
-          (dialog_style & WS_CLIPSIBLINGS) != 0,
-          "production dialog clips child/sibling paint regions on resize");
+          (dialog_style & WS_CLIPSIBLINGS) != 0 &&
+          (dialog_style & WS_MAXIMIZEBOX) != 0 &&
+          (dialog_style & WS_THICKFRAME) != 0,
+          "resizable production dialog supports native maximize/restore and clean clipping");
 
     HWND review_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
     HWND manual = GetDlgItem(dialog, IDC_METADATA_MANUAL_INPUT);
