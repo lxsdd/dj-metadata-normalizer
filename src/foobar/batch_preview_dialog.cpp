@@ -2060,6 +2060,22 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             return TRUE;
         }
         if (header && header->idFrom == IDC_METADATA_LIST &&
+            may_activate_musicbrainz_release(header->code,
+                state->show_candidate && state->musicbrainz_live_view,
+                state->musicbrainz_kind==
+                    djmeta::online::musicbrainz::SearchKind::Release,
+                state->musicbrainz_release_loaded,
+                state->candidate_source_index==state->selected_track_index)) {
+            // A native ListView double-click or Enter is equivalent to
+            // explicitly clicking Load MB release. Existing code checks the
+            // selected verified MBID, enforces rate limiting and never writes.
+            SendMessageW(dialog,WM_COMMAND,
+                MAKEWPARAM(IDC_METADATA_MB_LOAD_RELEASE,BN_CLICKED),
+                reinterpret_cast<LPARAM>(GetDlgItem(dialog,
+                                                    IDC_METADATA_MB_LOAD_RELEASE)));
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_LIST &&
             header->code == LVN_ITEMCHANGED && state->show_candidate &&
             state->musicbrainz_live_view) {
             if (!state->updating_musicbrainz_selection) {
