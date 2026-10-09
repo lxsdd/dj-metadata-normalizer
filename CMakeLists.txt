@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(dj_metadata_normalizer VERSION 0.1.0 LANGUAGES CXX)
+project(music_metadata_studio VERSION 0.1.0 LANGUAGES CXX)
 
 add_library(djmeta_core STATIC
     src/core/normalizer.cpp

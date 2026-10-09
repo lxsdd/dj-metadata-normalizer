@@ -9,7 +9,7 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{3D3B1AE0-D856-4F4B-9393-C2136EA817AD}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>foo_dj_metadata_normalizer</RootNamespace>
+    <RootNamespace>foo_music_metadata_studio</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -31,7 +31,7 @@
     <FoobarSdkRoot Condition="'$(FoobarSdkRoot)'==''">$(MSBuildProjectDirectory)\external\foobar2000-sdk</FoobarSdkRoot>
     <OutDir>$(MSBuildProjectDirectory)\out\foobar\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildProjectDirectory)\build\foobar\$(Platform)\$(Configuration)\</IntDir>
-    <TargetName>foo_dj_metadata_normalizer</TargetName>
+    <TargetName>foo_music_metadata_studio</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>

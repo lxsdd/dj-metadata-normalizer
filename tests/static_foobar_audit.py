@@ -37,12 +37,12 @@ found = [token for token in forbidden if token in sources]
 if found:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: write-capable token(s): " + ", ".join(found))
 
-project = (root / "foo_dj_metadata_normalizer.vcxproj").read_text(encoding="utf-8")
+project = (root / "foo_music_metadata_studio.vcxproj").read_text(encoding="utf-8")
 for token in [
     "FOOBAR2000_TARGET_VERSION=81",
     "src\\core\\normalizer.cpp",
     "src\\core\\rule_loader.cpp",
-    "foo_dj_metadata_normalizer",
+    "foo_music_metadata_studio",
 ]:
     if token not in project:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: project contract missing " + token)
