@@ -529,9 +529,10 @@ MusicBrainzBrowseRows group_musicbrainz_release_rows(
         }
         auto& summary=out.summary.back();
         if (row.field.ends_with(" / TITLE") ||
-            row.field.ends_with(" / PERFORMER") ||
-            row.field.ends_with(" / ALBUM")) {
-            if (!row.original_values.empty()) summary.original_values=row.original_values;
+            row.field.ends_with(" / ALBUM") ||
+            (summary.candidate.values.empty() &&
+             row.field.ends_with(" / PERFORMER"))) {
+            summary.original_values=row.original_values;
             summary.candidate.values=row.candidate.values;
         }
         if (row.state==FieldReviewState::Blocked)
@@ -2283,8 +2284,9 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             // Preserve hidden logical widths and current user resizing.
             capture_review_grid_controls(state->metadata_track_list,
                                          state->track_grid, state->active_dpi);
-            capture_review_grid_controls(state->metadata_list,
-                                         state->detail_grid, state->active_dpi);
+            if (!state->musicbrainz_browse_columns_active)
+                capture_review_grid_controls(state->metadata_list,
+                                             state->detail_grid, state->active_dpi);
             state->active_dpi = new_dpi;
         }
         const auto* dimensions = reinterpret_cast<const RECT*>(lp);
@@ -2548,6 +2550,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             state->cue_candidate_comparison_mode = compare_cue;
             state->musicbrainz_live_view = false;
             state->musicbrainz_results.clear();
+            state->musicbrainz_detail_groups.clear();
             update_metadata_table(*state);
             return TRUE;
         }
