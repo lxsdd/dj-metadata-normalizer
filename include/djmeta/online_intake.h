@@ -4,7 +4,9 @@
 // shell, file, clipboard, SDK or writer access. Parsers return evidence ONLY.
 #include "djmeta/online_fields.h"
 
+#include <charconv>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -17,6 +19,9 @@ struct ManualCandidate {
     std::string provider;
     std::string source_id;
     EvidenceScope scope = EvidenceScope::Recording;
+    // Optional explicit 0-based CUE order, never inferred from TRACK number
+    // or FILE position. Allowed by the text intake for CUE comparison only.
+    std::optional<std::size_t> cue_track_ordinal;
     std::vector<FieldEvidence> fields;
 };
 
@@ -57,6 +62,8 @@ inline EvidenceScope parse_evidence_scope(std::string_view value) {
 // @provider=discogs
 // @id=release:100
 // @scope=edition
+// Optional for CUE recording-level comparison: @cue_track_ordinal=2
+// (1-based absolute CUE order; never TRACK NN or subsong ID).
 // TITLE=Title (Extended Mix)
 // GENRE=House
 // GENRE=Deep House
@@ -72,6 +79,7 @@ inline ManualCandidate parse_manual_candidate(std::string_view raw) {
         throw std::invalid_argument("invalid UTF-8 in manual candidate");
     ManualCandidate result;
     bool saw_provider = false, saw_id = false, saw_scope = false;
+    bool saw_cue_track_ordinal = false;
     bool fields_started = false;
     std::size_t line_count = 0, offset = 0;
     while (offset < raw.size()) {
@@ -107,6 +115,20 @@ inline ManualCandidate parse_manual_candidate(std::string_view raw) {
                 if (saw_scope) throw std::invalid_argument("duplicate scope");
                 result.scope = parse_evidence_scope(raw_value);
                 saw_scope = true;
+            } else if (raw_name == "@cue_track_ordinal") {
+                if (saw_cue_track_ordinal || raw_value.empty() ||
+                    raw_value.front() == '0')
+                    throw std::invalid_argument("invalid or duplicate CUE track ordinal");
+                std::size_t ordinal = 0;
+                const auto numeric = std::from_chars(
+                    raw_value.data(), raw_value.data() + raw_value.size(), ordinal);
+                if (numeric.ec != std::errc{} ||
+                    numeric.ptr != raw_value.data() + raw_value.size() ||
+                    ordinal < 1 || ordinal > 1024)
+                    throw std::invalid_argument(
+                        "CUE track ordinal must be a decimal number from 1 to 1024");
+                result.cue_track_ordinal = ordinal - 1;
+                saw_cue_track_ordinal = true;
             } else {
                 throw std::invalid_argument("unknown manual candidate header");
             }
