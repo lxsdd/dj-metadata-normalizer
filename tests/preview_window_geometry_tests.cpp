@@ -33,5 +33,27 @@ int main() {
     }
     check(serialize_preview_window_size({1, 2}).empty(),
           "out-of-range size is not persisted");
-    std::cout << "PASS: foobar preview window dimension persistence policy\n";
+    for (const PreviewWindowPlacement original : {
+        PreviewWindowPlacement{-1950,125,1180,750,false},
+        PreviewWindowPlacement{220,140,1500,900,true},
+        PreviewWindowPlacement{0,0,320,240,false}
+    }) {
+        const auto saved=serialize_preview_window_placement(original);
+        const auto parsed=parse_preview_window_placement(saved);
+        check(parsed && *parsed==original,
+              "position, normal dimensions and maximize state roundtrip exactly");
+        check(serialize_preview_window_placement(*parsed)==saved,
+              "unchanged window geometry yields identical cfg string");
+    }
+    for (const std::string malformed : {
+        "", "v1", "v2|0|0|800|600|0", "v1|0|0|800|600",
+        "v1|0|0|800|600|0|ignored", "v1|-90000|0|800|600|0",
+        "v1|0|0|319|600|0", "v1|0|0|800|8193|0",
+        "v1|0|0|800|600|2", "v1|x|0|800|600|0",
+        "v1|0|0|800|600|false", "v1|1.3|0|800|600|0"
+    })
+        check(!parse_preview_window_placement(malformed),
+              "invalid/offscreen/unknown geometry cfg is rejected");
+    std::cout << "PASS: foobar preview normal position/size/maximize + migration schema\n";
+
 }
