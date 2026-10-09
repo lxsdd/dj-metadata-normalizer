@@ -817,7 +817,7 @@ void update_musicbrainz_browse_headers(PreviewState& state) {
     }
     if (!browse && state.musicbrainz_browse_columns_active) {
         apply_review_grid_controls(state.metadata_list,state.detail_grid,
-                                   current_dpi(state.metadata_list));
+                                   state.active_dpi);
     }
     state.musicbrainz_browse_columns_active=browse;
     if (browse) {
@@ -1448,8 +1448,8 @@ void restore_batch_dialog_window_size(PreviewState& state) {
         available_h<state.initial_window_height) return;
     const int width=(std::clamp)(target_width,state.initial_window_width,available_w);
     const int height=(std::clamp)(target_height,state.initial_window_height,available_h);
-    left=(std::clamp)(left,screen.rcWork.left,screen.rcWork.right-width);
-    top=(std::clamp)(top,screen.rcWork.top,screen.rcWork.bottom-height);
+    left=(std::clamp<int>)(left,screen.rcWork.left,screen.rcWork.right-width);
+    top=(std::clamp<int>)(top,screen.rcWork.top,screen.rcWork.bottom-height);
     // Saved position is the user's last normal (restored) window location.
     // Clamp after monitor/DPI changes to ensure the caption always stays visible.
     SetWindowPos(state.dialog,nullptr,left,top,width,height,
