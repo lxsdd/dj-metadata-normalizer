@@ -5,6 +5,7 @@
 #include "batch_preview_dialog.h"
 #include "host_file_probe.h"
 #include "cue_readonly_source.h"
+#include "musicbrainz_http.h"
 #include "batch_table_settings.h"
 #include "legacy_routing_profiles.h"
 #include "native_preview_controls.h"
@@ -19,6 +20,8 @@
 #include "djmeta/metadata_diff.h"
 #include "djmeta/online_intake.h"
 #include "djmeta/cue_manual_preview.h"
+#include "djmeta/musicbrainz_provider.h"
+#include "djmeta/cue_online_bridge.h"
 #include "djmeta/physical_selection.h"
 #include "djmeta/review_decisions.h"
 #include "djmeta/track_review.h"
@@ -30,6 +33,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -78,6 +82,11 @@ struct PreviewState {
     bool show_candidate = false; // third tab, never a write path
     bool cue_inspection_mode = false; // exact CUE source view, no online proposal
     bool cue_candidate_comparison_mode = false; // evidence-only CUE field diff
+    bool musicbrainz_live_view = false; // only set from successful official HTTPS
+    bool musicbrainz_release_loaded = false;
+    djmeta::online::musicbrainz::SearchKind musicbrainz_kind =
+        djmeta::online::musicbrainz::SearchKind::Recording;
+    std::vector<djmeta::online::musicbrainz::SearchCandidate> musicbrainz_results;
     bool show_whitespace = false;
     std::size_t candidate_source_index = (std::numeric_limits<std::size_t>::max)();
     std::vector<djmeta::online::FieldReviewRow> candidate_rows;
@@ -430,7 +439,8 @@ std::wstring candidate_cell_text(const djmeta::online::FieldReviewRow& item,
     case 0: return from_utf8(item.field);
     case 1: return show_field_values(item.original_values);
     case 2: return show_field_values(item.candidate.values);
-    case 3: return L"Pasted: " + from_utf8(item.candidate.provider);
+    case 3: return item.reason.starts_with("musicbrainz_live_")
+        ? L"MusicBrainz API" : L"Pasted: " + from_utf8(item.candidate.provider);
     case 4:
         return item.state == djmeta::online::FieldReviewState::Unchanged
             ? L"No change" :
@@ -488,9 +498,19 @@ void update_metadata_table(PreviewState& state) {
              (physical && state.entries[state.selected_track_index].handle->get_subsong_index() == 0));
         EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_INSPECT_CUE),
                      cue_readable ? TRUE : FALSE);
+        EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_MB_SEARCH),
+                     (physical || cue_readable) ? TRUE : FALSE);
+        const bool can_load_release = state.musicbrainz_live_view &&
+            !state.musicbrainz_release_loaded &&
+            state.candidate_source_index == state.selected_track_index &&
+            state.musicbrainz_kind ==
+                djmeta::online::musicbrainz::SearchKind::Release &&
+            !state.musicbrainz_results.empty();
+        EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_MB_LOAD_RELEASE),
+                     can_load_release ? TRUE : FALSE);
         state.candidate_view_order.clear();
         if ((physical || state.cue_inspection_mode ||
-             state.cue_candidate_comparison_mode) &&
+             state.cue_candidate_comparison_mode || state.musicbrainz_live_view) &&
             state.selected_track_index == state.candidate_source_index) {
             for (std::size_t i = 0; i < state.candidate_rows.size(); ++i)
                 state.candidate_view_order.push_back(i);
@@ -510,6 +530,13 @@ void update_metadata_table(PreviewState& state) {
         InvalidateRect(state.metadata_track_list, nullptr, FALSE); // counts may change after import
         const std::wstring hint = !selected_valid
             ? L"Select an audio file or CUE to inspect. No files are written."
+            : state.musicbrainz_live_view &&
+              state.candidate_source_index == state.selected_track_index
+            ? (state.musicbrainz_release_loaded
+                ? L"MusicBrainz release details + tentative CUE assignment, read-only. "
+                  L"Unmatched tracks are blocked. No tags were written."
+                : L"Official MusicBrainz online candidates, read-only. Select a release row "
+                  L"then Load MB release for tracklist. No files were changed.")
             : state.cue_inspection_mode &&
               state.candidate_source_index == state.selected_track_index
             ? L"Source CUE metadata displayed read-only. To compare a clipboard candidate, "
@@ -635,6 +662,12 @@ void show_preview_page(HWND dialog, PreviewState& state,
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_IMPORT_CANDIDATE),
         candidate ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_INSPECT_CUE),
+        candidate ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(dialog, IDC_METADATA_MB_QUERY),
+        candidate ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(dialog, IDC_METADATA_MB_SEARCH),
+        candidate ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(dialog, IDC_METADATA_MB_LOAD_RELEASE),
         candidate ? SW_SHOW : SW_HIDE);
     const wchar_t* headers[2] = { candidate ? L"Source" : L"Safety",
                                    candidate ? L"Status" : L"Decision" };
@@ -960,6 +993,7 @@ void capture_resize_layout(PreviewState& state) {
             id != IDC_BATCH_TABS &&
             layout.original.top >= current.initial_list_bottom;
         layout.shift_right = id == IDC_METADATA_INSPECT_CUE ||
+                             id == IDC_METADATA_MB_LOAD_RELEASE ||
                              id == IDC_METADATA_IMPORT_CANDIDATE ||
                              id == IDC_METADATA_USE_VALUE ||
                              id == IDC_BATCH_APPLY_SELECTED ||
@@ -1422,6 +1456,9 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                 0, reinterpret_cast<LPARAM>(scope));
         SendDlgItemMessageW(dialog, IDC_METADATA_REVIEW_SCOPE, CB_SETCURSEL, 0, 0);
         SendDlgItemMessageW(dialog, IDC_METADATA_MANUAL_INPUT, EM_LIMITTEXT, 16384, 0);
+        SendDlgItemMessageW(dialog, IDC_METADATA_MB_QUERY, EM_LIMITTEXT, 150, 0);
+        SendDlgItemMessageW(dialog, IDC_METADATA_MB_QUERY, EM_SETCUEBANNER,
+            FALSE, reinterpret_cast<LPARAM>(L"Optional title / album"));
         SendDlgItemMessageW(dialog, IDC_METADATA_VISIBLE_WHITESPACE,
                             BM_SETCHECK, BST_UNCHECKED, 0);
 
@@ -1600,9 +1637,13 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                             const bool is_cue_inventory =
                                 item.reason == "cue_inventory_read_only" ||
                                 item.reason == "cue_inventory_unqualified";
+                            const bool official_musicbrainz =
+                                item.reason.starts_with("musicbrainz_live_");
                             const std::wstring label =
                                 std::wstring(is_cue_inventory
                                     ? L"Source: actual local CUE carrier"
+                                    : official_musicbrainz
+                                    ? L"Source: official MusicBrainz HTTPS API (read-only)"
                                     : L"Source: manual paste, provider unverified") +
                                 L"\nDeclared provider: " + from_utf8(item.candidate.provider) +
                                 L"\nSource ID: " + from_utf8(item.candidate.source_id) +
@@ -1886,6 +1927,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             state->candidate_source_index = state->selected_track_index;
             state->cue_inspection_mode = true;
             state->cue_candidate_comparison_mode = false;
+            state->musicbrainz_live_view = false;
+            state->musicbrainz_results.clear();
             update_metadata_table(*state);
             return TRUE;
         }
@@ -1929,6 +1972,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             state->candidate_source_index = state->selected_track_index;
             state->cue_inspection_mode = false;
             state->cue_candidate_comparison_mode = compare_cue;
+            state->musicbrainz_live_view = false;
+            state->musicbrainz_results.clear();
             update_metadata_table(*state);
             return TRUE;
         }
