@@ -104,6 +104,7 @@ struct PreviewState {
     djmeta::ReviewGridLayout<5> detail_grid;
     bool updating_track_selection = false;
     bool updating_musicbrainz_selection = false;
+    bool musicbrainz_browse_columns_active = false;
     std::size_t selected_track_index = 0;
     std::size_t focused_track_index = (std::numeric_limits<std::size_t>::max)();
     djmeta::MetadataFocus metadata_focus = djmeta::MetadataFocus::Music;
@@ -726,7 +727,8 @@ void layout_musicbrainz_detail_pane(PreviewState& state) {
     const auto frame=split.detail;
     const int width=frame.right-frame.left;
     const int height=frame.bottom-frame.top;
-    const bool active=state.show_candidate && state.musicbrainz_live_view;
+    const bool active=state.show_candidate && state.musicbrainz_live_view &&
+        state.candidate_source_index==state.selected_track_index;
     if (!active) {
         SetWindowPos(state.metadata_list,nullptr,frame.left,frame.top,
             (std::max)(8,width),(std::max)(8,height),
@@ -796,7 +798,8 @@ void refresh_musicbrainz_detail_rows(PreviewState& state) {
 
 void update_musicbrainz_browse_headers(PreviewState& state) {
     if (!state.metadata_list) return;
-    const bool browse=state.show_candidate && state.musicbrainz_live_view;
+    const bool browse=state.show_candidate && state.musicbrainz_live_view &&
+        state.candidate_source_index==state.selected_track_index;
     const wchar_t* names[5]={L"Field",L"Original",L"Proposed",L"Source",L"Status"};
     if (browse) {
         names[0]=state.musicbrainz_release_loaded?L"Album / Track":L"Recording / Release";
@@ -811,6 +814,11 @@ void update_musicbrainz_browse_headers(PreviewState& state) {
         column.pszText=const_cast<LPWSTR>(names[i]);
         ListView_SetColumn(state.metadata_list,i,&column);
     }
+    if (!browse && state.musicbrainz_browse_columns_active) {
+        apply_review_grid_controls(state.metadata_list,state.detail_grid,
+                                   current_dpi(state.metadata_list));
+    }
+    state.musicbrainz_browse_columns_active=browse;
     if (browse) {
         RECT bounds{};
         GetClientRect(state.metadata_list,&bounds);
@@ -850,6 +858,19 @@ void update_metadata_table(PreviewState& state) {
             !state.musicbrainz_results.empty();
         EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_MB_LOAD_RELEASE),
                      can_load_release ? TRUE : FALSE);
+        // Preserve the candidate, not its old sorted view row.
+        std::string selected_browser_id;
+        const int selected_before=ListView_GetNextItem(
+            state.metadata_list,-1,LVNI_SELECTED);
+        if (selected_before>=0 &&
+            static_cast<std::size_t>(selected_before)<state.candidate_view_order.size()) {
+            const auto old_index=state.candidate_view_order[
+                static_cast<std::size_t>(selected_before)];
+            if (old_index<state.candidate_rows.size()) {
+                const auto& old=state.candidate_rows[old_index];
+                selected_browser_id=old.candidate.source_id+"|"+old.field;
+            }
+        }
         state.candidate_view_order.clear();
         if ((physical || state.cue_inspection_mode ||
              state.cue_candidate_comparison_mode || state.musicbrainz_live_view) &&
@@ -870,16 +891,27 @@ void update_metadata_table(PreviewState& state) {
             LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
         layout_musicbrainz_detail_pane(state);
         update_musicbrainz_browse_headers(state);
-        if (state.musicbrainz_live_view) {
-            // The sorted ListView is the browser; preserve the selection if
-            // still in range, otherwise default to its first available hit.
-            int selected=ListView_GetNextItem(state.metadata_list,-1,LVNI_SELECTED);
-            if ((selected<0 ||
-                 static_cast<std::size_t>(selected)>=state.candidate_view_order.size()) &&
-                !state.candidate_view_order.empty()) {
+        if (state.musicbrainz_live_view &&
+            state.candidate_source_index==state.selected_track_index) {
+            std::size_t target=0;
+            bool found=false;
+            for (std::size_t i=0;i<state.candidate_view_order.size();++i) {
+                const auto& row=state.candidate_rows[state.candidate_view_order[i]];
+                if (!selected_browser_id.empty() &&
+                    row.candidate.source_id+"|"+row.field==selected_browser_id) {
+                    target=i;
+                    found=true;
+                    break;
+                }
+            }
+            const int selected_now=ListView_GetNextItem(
+                state.metadata_list,-1,LVNI_SELECTED);
+            if (!state.candidate_view_order.empty() &&
+                ((found && selected_now!=static_cast<int>(target)) ||
+                 (!found && selected_now<0))) {
                 state.updating_musicbrainz_selection=true;
                 ListView_SetItemState(state.metadata_list,-1,0,LVIS_SELECTED);
-                ListView_SetItemState(state.metadata_list,0,
+                ListView_SetItemState(state.metadata_list,static_cast<int>(target),
                     LVIS_SELECTED|LVIS_FOCUSED,LVIS_SELECTED|LVIS_FOCUSED);
                 state.updating_musicbrainz_selection=false;
             }
@@ -2233,8 +2265,9 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             store_batch_table_layout(state->layout);
             capture_review_grid_controls(state->metadata_track_list, state->track_grid,
                                          current_dpi(state->metadata_track_list));
-            capture_review_grid_controls(state->metadata_list, state->detail_grid,
-                                         current_dpi(state->metadata_list));
+            if (!state->musicbrainz_browse_columns_active)
+                capture_review_grid_controls(state->metadata_list, state->detail_grid,
+                                             current_dpi(state->metadata_list));
             store_track_grid_layout(state->track_grid);
             store_detail_grid_layout(state->detail_grid);
         } catch (const std::exception&) {
