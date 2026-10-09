@@ -86,5 +86,20 @@ int main() {
           malformed[0].reason == "invalid_evidence_identity",
           "invalid control byte in tag name cannot enter draft");
 
+    const auto extra_safety = review_online_fields(original, {
+        {"USLT", {"words"}, "discogs", "r1"},
+        {"SYLT", {"words"}, "discogs", "r1"},
+        {"COMMENT", {std::string("A\0B", 3)}, "discogs", "r1"},
+        {"TITLE", {std::string("\xC0\xAF", 2)}, "discogs", "r1"},
+        {"GENRE", {""}, "discogs", "r1"}
+    });
+    check(extra_safety.size() == 5 &&
+          extra_safety[0].reason == "protected_metadata_field" &&
+          extra_safety[1].reason == "protected_metadata_field" &&
+          extra_safety[2].reason == "invalid_or_empty_evidence_value" &&
+          extra_safety[3].reason == "invalid_or_empty_evidence_value" &&
+          extra_safety[4].reason == "invalid_or_empty_evidence_value",
+          "shared lyrics safety and UTF-8/NUL/empty provider-value guards");
+
     std::cout << "PASS: online field provenance, protected tags, no-op and review-only\n";
 }
