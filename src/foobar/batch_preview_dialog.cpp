@@ -596,12 +596,6 @@ void update_master_table(PreviewState& state) {
                                   selected, state.selected_track_index);
     state.updating_track_selection = false;
     InvalidateRect(state.metadata_track_list, nullptr, FALSE);
-    auto sort_view = state.detail_grid;
-    if (candidate) {
-        sort_view.sort_column = state.candidate_sort_column;
-        sort_view.sort_descending = state.candidate_sort_descending;
-    }
-    show_review_grid_sort_arrow(state.metadata_list, sort_view);
 }
 
 void show_preview_page(HWND dialog, PreviewState& state,
@@ -630,6 +624,12 @@ void show_preview_page(HWND dialog, PreviewState& state,
         ListView_SetColumn(state.metadata_track_list, i + 1, &col);
     }
     InvalidateRect(state.metadata_track_list, nullptr, FALSE);
+    auto sort_view = state.detail_grid;
+    if (candidate) {
+        sort_view.sort_column = state.candidate_sort_column;
+        sort_view.sort_descending = state.candidate_sort_descending;
+    }
+    show_review_grid_sort_arrow(state.metadata_list, sort_view);
     ShowWindow(state.metadata_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_track_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_filter, metadata && !candidate ? SW_SHOW : SW_HIDE);
