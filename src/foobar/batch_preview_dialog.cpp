@@ -51,15 +51,6 @@ struct PreviewEntry {
     std::string raw_target_probe_detail; // never represents foobar's final FileOps destination
 };
 
-struct ResizableControl {
-    HWND window = nullptr;
-    RECT original{};
-    bool stretch_width = false;
-    bool stretch_height = false;
-    bool shift_down = false;
-    bool shift_right = false;
-};
-
 struct PreviewState {
     HWND dialog = nullptr;
     int initial_client_width = 0;
@@ -68,7 +59,7 @@ struct PreviewState {
     int initial_list_bottom = 0;
     int initial_window_width = 0;
     int initial_window_height = 0;
-    std::vector<ResizableControl> resize_controls;
+    std::vector<NativePreviewResizeChild> resize_controls;
     std::vector<PreviewEntry> entries;
     djmeta::BatchPreviewTable table;
     RoutePreviewChoice current_choice;
@@ -937,7 +928,7 @@ void capture_resize_layout(PreviewState& state) {
     EnumChildWindows(dialog, [](HWND control, LPARAM state_ptr) -> BOOL {
         auto& current = *reinterpret_cast<PreviewState*>(state_ptr);
         if (GetParent(control) != current.dialog) return TRUE;
-        ResizableControl layout;
+        NativePreviewResizeChild layout;
         layout.window = control;
         GetWindowRect(control, &layout.original);
         MapWindowPoints(HWND_DESKTOP, current.dialog,
@@ -971,30 +962,68 @@ void resize_batch_dialog(PreviewState& state, int width, int height) {
     if (state.resize_controls.empty() || width < 1 || height < 1) return;
     const int dx = width - state.initial_client_width;
     const int dy = height - state.initial_client_height;
-    for (const auto& child : state.resize_controls) {
-        if (!IsWindow(child.window)) continue;
-        const RECT& orig = child.original;
-        const int x = orig.left + (child.shift_right ? dx : 0);
-        const int y = orig.top + (child.shift_down ? dy : 0);
-        const int w = (orig.right - orig.left) + (child.stretch_width ? dx : 0);
-        const int h = (orig.bottom - orig.top) + (child.stretch_height ? dy : 0);
-        SetWindowPos(child.window, nullptr, x, y,
-                     (std::max)(8, w), (std::max)(8, h),
-                     SWP_NOZORDER | SWP_NOACTIVATE);
-    }
+    if (!apply_native_preview_resize(
+            state.resize_controls, state.metadata_track_list, state.metadata_list,
+            dx, dy)) return;
+    // Repaint moved siblings as a single region. Do not force synchronous
+    // painting for every WM_SIZE while the user is dragging the border.
+    RedrawWindow(state.dialog, nullptr, nullptr,
+                 RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_ERASE);
+}
 
-    // Use the original production HWND rectangles (not a screenshot's
-    // coordinates) so master and detail each receive half of extra space.
-    const RECT* master = nullptr;
-    const RECT* detail = nullptr;
-    for (const auto& child : state.resize_controls) {
-        if (child.window == state.metadata_track_list) master = &child.original;
-        if (child.window == state.metadata_list) detail = &child.original;
-    }
-    if (master && detail)
-        apply_review_split_geometry(state.metadata_track_list,
-                                    state.metadata_list, *master, *detail,
-                                    dx, dy);
+void restore_batch_dialog_window_size(PreviewState& state) {
+    const auto saved = load_batch_preview_window_size();
+    if (!saved || !state.dialog || state.initial_window_width <= 0) return;
+    const int dpi = (std::max)(96, state.active_dpi);
+    int target_width = MulDiv(saved->width_at_96_dpi, dpi, 96);
+    int target_height = MulDiv(saved->height_at_96_dpi, dpi, 96);
+    RECT original{};
+    if (!GetWindowRect(state.dialog, &original)) return;
+    MONITORINFO screen{};
+    screen.cbSize = sizeof(screen);
+    const HMONITOR monitor = MonitorFromWindow(state.dialog, MONITOR_DEFAULTTONEAREST);
+    if (!monitor || !GetMonitorInfoW(monitor, &screen)) return;
+    const int available_w = screen.rcWork.right - screen.rcWork.left;
+    const int available_h = screen.rcWork.bottom - screen.rcWork.top;
+    if (available_w < state.initial_window_width ||
+        available_h < state.initial_window_height) return;
+    target_width = (std::clamp)(target_width,
+        state.initial_window_width, available_w);
+    target_height = (std::clamp)(target_height,
+        state.initial_window_height, available_h);
+    const int left = (std::clamp)(original.left, screen.rcWork.left,
+                                screen.rcWork.right - target_width);
+    const int top = (std::clamp)(original.top, screen.rcWork.top,
+                               screen.rcWork.bottom - target_height);
+    // Layout baseline was captured from the unchanged resource template.
+    // SetWindowPos triggers the same WM_SIZE path as an ordinary resize.
+    SetWindowPos(state.dialog, nullptr, left, top, target_width, target_height,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void save_batch_dialog_window_size(const PreviewState& state) {
+    if (!state.dialog || state.initial_window_width <= 0 ||
+        state.initial_window_height <= 0) return;
+    WINDOWPLACEMENT placement{};
+    placement.length = sizeof(placement);
+    if (!GetWindowPlacement(state.dialog, &placement) ||
+        IsIconic(state.dialog)) return;
+    // If the window was maximized, remember its normal dimensions rather
+    // than a monitor-sized maximized rectangle.
+    const RECT bounds = placement.rcNormalPosition;
+    const int width = bounds.right - bounds.left;
+    const int height = bounds.bottom - bounds.top;
+    if (width <= 0 || height <= 0) return;
+    const int dpi = (std::max)(96, state.active_dpi);
+    djmeta::PreviewWindowSize logical{
+        MulDiv(width, 96, dpi), MulDiv(height, 96, dpi)};
+    if (!djmeta::valid_preview_window_size(logical)) return;
+    // Do not introduce a foobar cfg write just because the unchanged default
+    // window was opened and closed for a read-only metadata preview.
+    if (!load_batch_preview_window_size() &&
+        width == state.initial_window_width &&
+        height == state.initial_window_height) return;
+    store_batch_preview_window_size(logical);
 }
 
 void apply_review_action(HWND dialog, PreviewState& state,
@@ -1439,6 +1468,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         show_preview_page(dialog, *state, true);
         align_native_preview_form(dialog);
         capture_resize_layout(*state);
+        restore_batch_dialog_window_size(*state);
         return TRUE;
         } catch (const std::exception&) {
             MessageBoxW(dialog, L"Unable to initialize the batch preview table.",
@@ -1461,6 +1491,13 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     if (message == WM_SIZE && state->initial_client_width > 0) {
         resize_batch_dialog(*state, LOWORD(lp), HIWORD(lp));
         align_native_preview_form(dialog);
+        return TRUE;
+    }
+    if (message == WM_EXITSIZEMOVE) {
+        // Native buttons and hidden tab siblings must not leave paint ghosts
+        // when a user stops dragging the window edge.
+        RedrawWindow(dialog, nullptr, nullptr,
+                     RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
         return TRUE;
     }
 
@@ -1722,6 +1759,11 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         }
     }
     if (message == WM_DESTROY) {
+        try {
+            save_batch_dialog_window_size(*state);
+        } catch (const std::exception&) {
+            // Invalid display state never blocks closing the preview.
+        }
         // UI layout is independent of preview Cancel/Close. Save only display
         // preferences, never route edits, media metadata or file operations.
         try {
