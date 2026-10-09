@@ -795,8 +795,8 @@ void refresh_musicbrainz_detail_rows(PreviewState& state) {
 }
 
 void update_musicbrainz_browse_headers(PreviewState& state) {
-    if (!state.show_candidate || !state.metadata_list) return;
-    const bool browse=state.musicbrainz_live_view;
+    if (!state.metadata_list) return;
+    const bool browse=state.show_candidate && state.musicbrainz_live_view;
     const wchar_t* names[5]={L"Field",L"Original",L"Proposed",L"Source",L"Status"};
     if (browse) {
         names[0]=state.musicbrainz_release_loaded?L"Album / Track":L"Recording / Release";
@@ -1031,6 +1031,7 @@ void show_preview_page(HWND dialog, PreviewState& state,
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_MB_LOAD_RELEASE),
         candidate ? SW_SHOW : SW_HIDE);
     layout_musicbrainz_detail_pane(state);
+    update_musicbrainz_browse_headers(state);
     const wchar_t* headers[2] = { candidate ? L"Source" : L"Safety",
                                    candidate ? L"Status" : L"Decision" };
     for (int i = 0; i < 2; ++i) {
@@ -2333,7 +2334,10 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                 entry.handle,entry.input.source_path).raw_text!=cue_before)
                 throw std::runtime_error("CUE changed during online search. Retry.");
             auto rows=musicbrainz_search_rows(result,local_title,local_artist);
-            state->candidate_rows=std::move(rows);
+            state->candidate_rows=std::move(rows.summary);
+            state->musicbrainz_detail_groups=std::move(rows.detail);
+            state->musicbrainz_original_title=local_title;
+            state->musicbrainz_original_artist=local_artist;
             state->candidate_source_index=state->selected_track_index;
             state->musicbrainz_results=result.candidates;
             state->musicbrainz_kind=kind;
@@ -2395,8 +2399,12 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             if (read_cue_raw_on_demand(entry.handle,entry.input.source_path).raw_text
                 !=raw.raw_text)
                 throw std::runtime_error("CUE changed during lookup; discard stale results.");
-            state->candidate_rows=musicbrainz_cue_release_rows(cue,release);
+            auto grouped=group_musicbrainz_release_rows(
+                musicbrainz_cue_release_rows(cue,release));
+            state->candidate_rows=std::move(grouped.summary);
+            state->musicbrainz_detail_groups=std::move(grouped.detail);
             state->musicbrainz_release_loaded=true;
+            ListView_SetItemState(state->metadata_list,-1,0,LVIS_SELECTED);
             update_metadata_table(*state);
             return TRUE;
         }
@@ -2461,6 +2469,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             state->cue_candidate_comparison_mode = false;
             state->musicbrainz_live_view = false;
             state->musicbrainz_results.clear();
+            state->musicbrainz_detail_groups.clear();
             update_metadata_table(*state);
             return TRUE;
         }
