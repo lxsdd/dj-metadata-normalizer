@@ -79,7 +79,8 @@ int main() {
     fails("@provider=discogs\n@id=release:1\nTITLE=\n", "implicit deletion");
     fails("@provider=discogs\n@id=release:1\nTITLE=A\nBADVALUE\n", "no equals");
     fails("@provider=discogs\n@id=release:1\nTITLE=A\rB\n", "embedded CR");
-    fails("@provider=discogs\n@id=release:1\nTITLE=A\0B\n", "embedded NUL");
+    fails(std::string("@provider=discogs\n@id=release:1\nTITLE=A") +
+          std::string(1, '\0') + "B\n", "embedded NUL");
     fails("@provider=discogs\n@id=release:1\nTITLE=\xC0\xAF\n", "invalid UTF8");
     fails("@provider=discogs\n@id=release:1\nTITLE@original@edition=A\n", "multiple role suffixes");
     fails("@provider=discogs\n@id=release:1\nTITLE=A\n" + std::string(65536, 'X'),
