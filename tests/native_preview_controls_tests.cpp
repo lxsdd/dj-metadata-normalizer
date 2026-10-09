@@ -79,6 +79,45 @@ int main() {
     HWND dialog = CreateDialogParamW(GetModuleHandleW(nullptr),
         MAKEINTRESOURCEW(IDD_BATCH_PREVIEW), nullptr, test_dialog_proc, 0);
     check(dialog != nullptr, "actual production dialog template instantiation");
+    // Test real RC-derived HWND styles, not a fabricated lookalike dialog.
+    const DWORD workspace_style=static_cast<DWORD>(GetWindowLongPtrW(dialog,GWL_STYLE));
+    const DWORD workspace_exstyle=static_cast<DWORD>(GetWindowLongPtrW(dialog,GWL_EXSTYLE));
+    check((workspace_style & WS_MINIMIZEBOX) != 0 &&
+          (workspace_style & WS_MAXIMIZEBOX) != 0 &&
+          (workspace_style & WS_THICKFRAME) != 0 &&
+          (workspace_style & WS_SYSMENU) != 0 &&
+          (workspace_style & DS_MODALFRAME) == 0,
+          "production workspace is resizable, minimizable and not a modal-frame dialog");
+    check((workspace_exstyle & WS_EX_APPWINDOW) != 0 &&
+          GetWindow(dialog,GW_OWNER)==nullptr,
+          "workspace has independent taskbar/Alt-Tab identity and no forced owner");
+    HWND refresh=GetDlgItem(dialog,IDC_BATCH_REFRESH);
+    check(refresh!=nullptr && IsWindowEnabled(refresh),
+          "explicit snapshot-refresh command exists in production resources");
+    RECT refresh_rect{}, hint_rect{}, footer_rect{};
+    check(GetWindowRect(refresh,&refresh_rect) &&
+          GetWindowRect(GetDlgItem(dialog,IDC_BATCH_HINT),&hint_rect) &&
+          GetWindowRect(GetDlgItem(dialog,IDC_METADATA_ACCEPT),&footer_rect) &&
+          refresh_rect.bottom < hint_rect.top &&
+          hint_rect.bottom < footer_rect.top,
+          "refresh, two-line status and action row are distinct and non-overlapping");
+    ShowWindow(dialog,SW_SHOWNA);
+    ShowWindow(dialog,SW_MINIMIZE);
+    check(IsIconic(dialog)!=FALSE,"native workspace minimizes independently");
+    ShowWindow(dialog,SW_RESTORE);
+    check(IsIconic(dialog)==FALSE,"native workspace restores from taskbar");
+    ShowWindow(dialog,SW_MAXIMIZE);
+    check(IsZoomed(dialog)!=FALSE,"native workspace maximizes");
+    ShowWindow(dialog,SW_RESTORE);
+    check(IsZoomed(dialog)==FALSE,"native workspace restores maximized state");
+    SetFocus(GetDlgItem(dialog,IDC_METADATA_MB_QUERY));
+    MSG navigation{};
+    navigation.hwnd=GetDlgItem(dialog,IDC_METADATA_MB_QUERY);
+    navigation.message=WM_KEYDOWN;
+    navigation.wParam=VK_TAB;
+    check(IsDialogMessageW(dialog,&navigation)!=FALSE,
+          "Win32 modeless IsDialogMessage consumes Tab for native dialog navigation");
+
 
     HWND combo = GetDlgItem(dialog, IDC_BATCH_PROFILE_PICKER);
     check(combo && !GetDlgItem(dialog, IDC_BATCH_PROFILE_NAME),
@@ -637,8 +676,9 @@ int main() {
           GetDlgItem(dialog, IDC_BATCH_APPLY_SELECTED),
           "preview actions exist in production resource");
 
-    DestroyWindow(dialog);
-    std::cout << "PASS: Win32 reviewed bindings, master/detail resizing and 96-192 DPI column geometry; "
+    check(DestroyWindow(dialog)!=FALSE && !IsWindow(dialog),
+          "modeless HWND shuts down without lingering native controls");
+    std::cout << "PASS: Win32 reviewed bindings, modeless taskbar lifecycle, master/detail resizing and 96-192 DPI column geometry; "
                  "native preview resource, editable profile, "
                  "virtual master/detail controls and shared label alignment\n";
     return 0;
