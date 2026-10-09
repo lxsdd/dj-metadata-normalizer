@@ -347,7 +347,7 @@ std::string unique_metadata_value(const djmeta::MetadataDocument& doc,
     std::string result;
     std::size_t matches=0;
     for (const auto& field:doc.fields)
-        if (djmeta::ascii_upper_field(field.name)==wanted) {
+        if (djmeta::online::ascii_upper_field(field.name)==wanted) {
             matches += field.values.size();
             if (field.values.size()==1) result=field.values[0];
         }
