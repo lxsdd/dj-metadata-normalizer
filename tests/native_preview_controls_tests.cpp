@@ -155,21 +155,31 @@ int main() {
                               id == IDC_METADATA_IMPORT_CANDIDATE;
         movable.push_back(control);
     }
-    constexpr int extra_width = 310;
-    constexpr int extra_height = 180;
+    // Windows CI can impose a small virtual desktop. SetWindowPos() can
+    // succeed but clamp the requested size to the OS maximum track size.
+    // Always feed the ACTUAL WM_SIZE client delta to production layout code.
+    RECT initial_client{};
+    GetClientRect(dialog, &initial_client);
+    constexpr int requested_extra_width = 310;
+    constexpr int requested_extra_height = 180;
     check(SetWindowPos(dialog, nullptr, 0, 0,
-            window_width + extra_width, window_height + extra_height,
+            window_width + requested_extra_width,
+            window_height + requested_extra_height,
             SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE,
-          "native dialog can expand horizontally and vertically");
+          "native dialog accepts Windows resize request");
+    RECT expanded_client{};
+    GetClientRect(dialog, &expanded_client);
+    const int extra_width = expanded_client.right - initial_client.right;
+    const int extra_height = expanded_client.bottom - initial_client.bottom;
+    check(extra_width >= 0 && extra_height >= 0,
+          "actual resize never unexpectedly reduces the available client area");
     check(djmeta_foobar::apply_native_preview_resize(movable,
             GetDlgItem(dialog, IDC_METADATA_TRACK_LIST),
             GetDlgItem(dialog, IDC_METADATA_LIST),
             extra_width, extra_height),
-          "shared production atomic resize succeeds");
+          "shared production atomic resize uses actual Win32 client change");
     RECT inspect_after = bounds_in_dialog(cue_inspect);
     RECT import_after = bounds_in_dialog(candidate_import);
-    RECT expanded_client{};
-    GetClientRect(dialog, &expanded_client);
     const bool actions_inside =
         inspect_after.right + 8 <= import_after.left &&
         import_after.right <= expanded_client.right &&
