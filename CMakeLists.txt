@@ -288,7 +288,18 @@ else()
     target_compile_options(djmeta_cue_online_bridge_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Source attributed CUE album and virtual track field-diff preview.
+add_executable(djmeta_cue_online_review_tests tests/cue_online_review_tests.cpp)
+target_link_libraries(djmeta_cue_online_review_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_cue_online_review_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_cue_online_review_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_cue_online_review_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_cue_online_review_tests COMMAND djmeta_cue_online_review_tests)
 add_test(NAME djmeta_cue_online_bridge_tests COMMAND djmeta_cue_online_bridge_tests)
 add_test(NAME djmeta_cue_metadata_tests COMMAND djmeta_cue_metadata_tests)
 add_test(NAME djmeta_online_intake_tests COMMAND djmeta_online_intake_tests)
