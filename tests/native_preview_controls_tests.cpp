@@ -142,6 +142,15 @@ int main() {
     check(GetWindowRect(candidate_import, &candidate_rect) != FALSE &&
           GetClientRect(dialog, &candidate_client_bounds) != FALSE,
           "candidate import button geometry readable");
+    const auto visual_center2=[](const RECT& r) { return r.top+r.bottom; };
+    const int baseline=visual_center2(mb_query_rect);
+    const auto close_center=[](int a,int b) {
+        return a>=b ? a-b<=2 : b-a<=2;
+    };
+    check(close_center(baseline,visual_center2(mb_search_rect)) &&
+          close_center(baseline,visual_center2(cue_inspect_rect)) &&
+          close_center(baseline,visual_center2(candidate_rect)),
+          "search input, search, CUE and clipboard controls share one toolbar centerline");
     MapWindowPoints(HWND_DESKTOP, dialog,
                     reinterpret_cast<POINT*>(&candidate_rect), 2);
     check(candidate_rect.left >= 0 &&
