@@ -627,6 +627,23 @@ std::wstring candidate_cell_text(const djmeta::online::FieldReviewRow& item,
                                  int column) {
     const bool cue_inventory = item.reason == "cue_inventory_read_only" ||
                                item.reason == "cue_inventory_unqualified";
+    if (item.reason.starts_with("musicbrainz_live_candidate_rank_") ||
+        item.reason == "musicbrainz_live_release_group") {
+        switch(column) {
+        case 0: return from_utf8(item.field);
+        case 1: return show_field_values(item.original_values);
+        case 2: return show_field_values(item.candidate.values);
+        case 3: return L"MusicBrainz API";
+        case 4: {
+            if (item.reason.starts_with("musicbrainz_live_candidate_rank_"))
+                return L"MB rank " + from_utf8(item.reason.substr(
+                    std::string("musicbrainz_live_candidate_rank_").size()));
+            return item.state==djmeta::online::FieldReviewState::Blocked
+                ? L"Unmatched" : L"Review";
+        }
+        default: return {};
+        }
+    }
     if (cue_inventory) {
         switch (column) {
         case 0: return from_utf8(item.field);
