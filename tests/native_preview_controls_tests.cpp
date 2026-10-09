@@ -132,7 +132,8 @@ int main() {
         column.cx=100;
         std::wstring title=(i==0?L"Field":i==1?L"Original":i==2?L"Suggested":L"Status");
         column.pszText=title.data();
-        check(ListView_InsertColumn(online_details,i,&column)==i,
+        check(static_cast<int>(SendMessageW(online_details,LVM_INSERTCOLUMNW,
+                         i,reinterpret_cast<LPARAM>(&column)))==i,
               "production online detail column created");
     }
     check(djmeta_foobar::insert_native_preview_detail_row(online_details,0,
@@ -142,7 +143,12 @@ int main() {
     const wchar_t* expected[]={L"ARTIST",L"(missing)",L"Daft Punk",L"Review"};
     for(int i=0;i<4;++i) {
         detail_value[0]=0;
-        ListView_GetItemText(online_details,0,i,detail_value,128);
+        LVITEMW fetched{};
+        fetched.iSubItem=i;
+        fetched.pszText=detail_value;
+        fetched.cchTextMax=128;
+        SendMessageW(online_details,LVM_GETITEMTEXTW,0,
+                     reinterpret_cast<LPARAM>(&fetched));
         check(std::wcscmp(detail_value,expected[i])==0,
               "actual native control preserves each of the four online detail cells");
     }
