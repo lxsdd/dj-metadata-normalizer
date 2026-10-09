@@ -86,6 +86,7 @@ struct PreviewState {
     bool show_whitespace = false;
     std::size_t candidate_source_index = (std::numeric_limits<std::size_t>::max)();
     std::vector<djmeta::online::FieldReviewRow> candidate_rows;
+    std::vector<std::size_t> candidate_view_order; // independent of normalization rows
     djmeta::ReviewGridLayout<4> track_grid;
     djmeta::ReviewGridLayout<5> detail_grid;
     bool updating_track_selection = false;
@@ -323,6 +324,17 @@ std::wstring track_master_cell(PreviewState& state, std::size_t row, int col) {
     const auto index = state.track_view_order[row];
     if (index >= state.track_summaries.size()) return {};
     const auto& track = state.track_summaries[index];
+    if (state.show_candidate && col != 0) {
+        if (state.candidate_source_index != index) return L"—";
+        const auto& rows = state.candidate_rows;
+        if (col == 1) return std::to_wstring(rows.size());
+        const auto kind = col == 2 ? djmeta::online::FieldReviewState::NeedsReview
+                                   : djmeta::online::FieldReviewState::Blocked;
+        return std::to_wstring(static_cast<std::size_t>(std::count_if(
+            rows.begin(), rows.end(), [kind](const auto& row) {
+                return row.state == kind;
+            })));
+    }
     switch(col) {
         case 0: return track.source_index < state.source_labels.size()
             ? from_utf8(readable_track_name(state.source_labels[track.source_index]))
@@ -387,24 +399,30 @@ std::wstring show_field_values(const std::vector<std::string>& values) {
     return result;
 }
 
+std::wstring candidate_cell_text(const djmeta::online::FieldReviewRow& item,
+                                 int column) {
+    switch (column) {
+    case 0: return from_utf8(item.field);
+    case 1: return show_field_values(item.original_values);
+    case 2: return show_field_values(item.candidate.values);
+    case 3: return from_utf8(item.candidate.provider);
+    case 4:
+        return item.state == djmeta::online::FieldReviewState::Unchanged
+            ? L"No change" :
+            item.state == djmeta::online::FieldReviewState::NeedsReview
+            ? L"Review" : L"Blocked";
+    default: return {};
+    }
+}
+
 std::wstring metadata_cell_text(PreviewState& state,
                                 std::size_t row, int column) {
     if (state.show_candidate) {
         if (state.candidate_source_index != state.selected_track_index ||
-            row >= state.candidate_rows.size()) return {};
-        const auto& item = state.candidate_rows[row];
-        switch (column) {
-        case 0: return from_utf8(item.field);
-        case 1: return show_field_values(item.original_values);
-        case 2: return show_field_values(item.candidate.values);
-        case 3: return from_utf8(item.candidate.provider);
-        case 4:
-            return item.state == djmeta::online::FieldReviewState::Unchanged
-                ? L"No change" :
-                item.state == djmeta::online::FieldReviewState::NeedsReview
-                ? L"Review" : L"Blocked";
-        default: return {};
-        }
+            row >= state.candidate_view_order.size()) return {};
+        const auto candidate_index = state.candidate_view_order[row];
+        if (candidate_index >= state.candidate_rows.size()) return {};
+        return candidate_cell_text(state.candidate_rows[candidate_index], column);
     }
     if (row >= state.metadata_view_order.size()) return {};
     const auto index = state.metadata_view_order[row];
@@ -429,16 +447,38 @@ std::wstring metadata_cell_text(PreviewState& state,
 
 void update_metadata_table(PreviewState& state) {
     if (state.show_candidate) {
-        const auto count = state.selected_track_index == state.candidate_source_index
-            ? state.candidate_rows.size() : std::size_t{0};
+        const bool selected_valid = state.selected_track_index < state.entries.size();
+        const bool physical = selected_valid &&
+            state.entries[state.selected_track_index].input.physical_source_qualified;
+        EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_IMPORT_CANDIDATE),
+                     physical ? TRUE : FALSE);
+        state.candidate_view_order.clear();
+        if (physical && state.selected_track_index == state.candidate_source_index) {
+            for (std::size_t i = 0; i < state.candidate_rows.size(); ++i)
+                state.candidate_view_order.push_back(i);
+            const int sort_column = state.detail_grid.sort_column;
+            std::stable_sort(state.candidate_view_order.begin(),
+                             state.candidate_view_order.end(),
+                [&](std::size_t a, std::size_t b) {
+                    const auto left = candidate_cell_text(state.candidate_rows[a], sort_column);
+                    const auto right = candidate_cell_text(state.candidate_rows[b], sort_column);
+                    return state.detail_grid.sort_descending ? left > right : left < right;
+                });
+        }
         ListView_SetItemCountEx(state.metadata_list,
-            static_cast<int>(count), LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+            static_cast<int>(state.candidate_view_order.size()),
+            LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
         InvalidateRect(state.metadata_list, nullptr, FALSE);
-        const std::wstring hint = count
-            ? L"Clipboard evidence is user-supplied and unverified. Read-only: no tags were written. "
-              L"No provider data was fetched."
-            : L"Select one track and click Import clipboard to compare manually supplied metadata. "
-              L"Format: @provider, @id, then FIELD=VALUE. No tags are written.";
+        const std::wstring hint = !selected_valid
+            ? L"No track is selected. Select one physical audio track."
+            : !physical
+            ? L"Selected source is a CUE, virtual subsong or unqualified physical file. "
+              L"Choose a uniquely qualified MP3 or other physical audio file."
+            : !state.candidate_view_order.empty()
+            ? L"Candidate loaded for the selected track. No change / Review / Blocked are "
+              L"comparison statuses, not write approvals. No tags were written."
+            : L"Copy a structured candidate and click Import clipboard. Required: "
+              L"@provider=discogs, @id=release:123 and FIELD=VALUE. No tags are written.";
         SetDlgItemTextW(state.dialog, IDC_BATCH_HINT, hint.c_str());
         return;
     }
@@ -554,6 +594,18 @@ void show_preview_page(HWND dialog, PreviewState& state,
         col.pszText = const_cast<LPWSTR>(headers[i]);
         ListView_SetColumn(state.metadata_list, i + 3, &col);
     }
+    const wchar_t* track_headers[3] = {
+        candidate ? L"Fields" : L"Music",
+        candidate ? L"Changes" : L"Other",
+        candidate ? L"Blocked" : L"Review"
+    };
+    for (int i = 0; i < 3; ++i) {
+        LVCOLUMNW col{};
+        col.mask = LVCF_TEXT;
+        col.pszText = const_cast<LPWSTR>(track_headers[i]);
+        ListView_SetColumn(state.metadata_track_list, i + 1, &col);
+    }
+    InvalidateRect(state.metadata_track_list, nullptr, FALSE);
     ShowWindow(state.metadata_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_track_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_filter, metadata && !candidate ? SW_SHOW : SW_HIDE);
@@ -1436,6 +1488,24 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             auto* tip = reinterpret_cast<NMLVGETINFOTIPW*>(lp);
             if (tip->iItem >= 0 && tip->pszText && tip->cchTextMax > 0) {
                 const auto row = static_cast<std::size_t>(tip->iItem);
+                if (state->show_candidate) {
+                    if (state->candidate_source_index == state->selected_track_index &&
+                        row < state->candidate_view_order.size()) {
+                        const auto idx = state->candidate_view_order[row];
+                        if (idx < state->candidate_rows.size()) {
+                            const auto& item = state->candidate_rows[idx];
+                            const std::wstring label =
+                                L"Source: " + from_utf8(item.candidate.provider) +
+                                L"\nSource ID: " + from_utf8(item.candidate.source_id) +
+                                L"\nField: " + from_utf8(item.field) +
+                                L"\nReason: " + from_utf8(item.reason) +
+                                L"\nOriginal: " + show_field_values(item.original_values) +
+                                L"\nProposal: " + show_field_values(item.candidate.values);
+                            lstrcpynW(tip->pszText, label.c_str(), tip->cchTextMax);
+                        }
+                    }
+                    return TRUE; // never show stale normalization rule details
+                }
                 if (row < state->metadata_view_order.size()) {
                     const auto index = state->metadata_view_order[row];
                     if (index < state->focused_metadata_rows.size()) {
