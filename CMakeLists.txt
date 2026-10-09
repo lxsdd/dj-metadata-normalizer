@@ -308,7 +308,18 @@ else()
     target_compile_options(djmeta_preview_window_geometry_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Native-free CUE clipboard presentation parity, no writer or HTTP dependencies.
+add_executable(djmeta_cue_manual_preview_tests tests/cue_manual_preview_tests.cpp)
+target_link_libraries(djmeta_cue_manual_preview_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_cue_manual_preview_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_cue_manual_preview_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_cue_manual_preview_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_cue_manual_preview_tests COMMAND djmeta_cue_manual_preview_tests)
 add_test(NAME djmeta_preview_window_geometry_tests COMMAND djmeta_preview_window_geometry_tests)
 add_test(NAME djmeta_cue_online_review_tests COMMAND djmeta_cue_online_review_tests)
 add_test(NAME djmeta_cue_online_bridge_tests COMMAND djmeta_cue_online_bridge_tests)
