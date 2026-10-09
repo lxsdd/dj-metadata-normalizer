@@ -4,11 +4,13 @@
 // evidence. No automatic source selection, deletion, or write authorization.
 #include "djmeta/normalizer.h"
 #include "djmeta/online_release.h"
+#include "djmeta/structural_guard.h"
 
 #include <cctype>
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace djmeta::online {
@@ -38,10 +40,8 @@ inline std::string ascii_upper_field(std::string_view name) {
 }
 
 inline bool is_structural_or_non_tag_field(const std::string& uppercase) {
-    return uppercase == "CUESHEET" || uppercase == "CUE_SHEET" ||
-           uppercase == "__CUESHEET" || uppercase == "LYRICS" ||
-           uppercase == "UNSYNCED LYRICS" || uppercase == "UNSYNCEDLYRICS" ||
-           uppercase == "SYNCEDLYRICS" || uppercase == "SYNCED LYRICS" ||
+    return is_protected_cue_metadata(uppercase) ||
+           is_lyrics_metadata(uppercase) ||
            uppercase == "METADATA_BLOCK_PICTURE" ||
            uppercase.rfind("REPLAYGAIN_", 0) == 0;
 }
@@ -62,7 +62,9 @@ inline std::vector<FieldReviewRow> review_online_fields(
         const auto name = ascii_upper_field(evidence.field);
 
         if (name.empty() || evidence.field.empty() ||
-            evidence.provider.empty() || evidence.source_id.empty()) {
+            !valid_utf8_metadata_text(evidence.field) ||
+            evidence.provider.empty() || evidence.source_id.empty() ||
+            evidence.source_id.find('\0') != std::string::npos) {
             row.reason = "invalid_evidence_identity";
             rows.push_back(std::move(row));
             continue;
@@ -74,6 +76,19 @@ inline std::vector<FieldReviewRow> review_online_fields(
         }
         if (evidence.values.empty()) {
             row.reason = "empty_evidence_must_not_delete_tag";
+            rows.push_back(std::move(row));
+            continue;
+        }
+        bool malformed_values = false;
+        for (const auto& value : evidence.values) {
+            if (value.empty() || value.find('\0') != std::string::npos ||
+                !valid_utf8_metadata_text(value)) {
+                malformed_values = true;
+                break;
+            }
+        }
+        if (malformed_values) {
+            row.reason = "invalid_or_empty_evidence_value";
             rows.push_back(std::move(row));
             continue;
         }
