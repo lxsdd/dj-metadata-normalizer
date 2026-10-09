@@ -288,7 +288,12 @@ inline bool align_native_action_row(HWND dialog, int input_id,
     const int button_middle=button_rect.top+(button_rect.bottom-button_rect.top)/2;
     const int delta=button_middle+optical_offset_px-actual_middle;
     if (delta == 0) return true;
-    return SetWindowPos(input,nullptr,0,outer_rect.top+delta,0,0,
+    // Convert the current SCREEN rect to dialog CLIENT coordinates before
+    // SetWindowPos. Using screen y here would shove controls off-screen on
+    // moved/maximized windows, and x=0 would lose the search-field offset.
+    MapWindowPoints(HWND_DESKTOP,dialog,
+                    reinterpret_cast<POINT*>(&outer_rect),2);
+    return SetWindowPos(input,nullptr,outer_rect.left,outer_rect.top+delta,0,0,
                         SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE)!=FALSE;
 }
 
