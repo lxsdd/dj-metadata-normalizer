@@ -700,6 +700,120 @@ std::wstring metadata_cell_text(PreviewState& state,
     }
 }
 
+void layout_musicbrainz_detail_pane(PreviewState& state) {
+    if (!state.dialog || !state.metadata_list ||
+        !state.musicbrainz_details || !state.musicbrainz_details_label ||
+        state.resize_controls.empty()) return;
+    const NativePreviewResizeChild *left=nullptr, *right=nullptr;
+    for (const auto& child:state.resize_controls) {
+        if (child.window==state.metadata_track_list) left=&child;
+        if (child.window==state.metadata_list) right=&child;
+    }
+    if (!left || !right) return;
+    RECT client{};
+    GetClientRect(state.dialog,&client);
+    const auto split=review_split_geometry(left->original,right->original,
+        client.right-state.initial_client_width,
+        client.bottom-state.initial_client_height);
+    const auto frame=split.detail;
+    const int width=frame.right-frame.left;
+    const int height=frame.bottom-frame.top;
+    const bool active=state.show_candidate && state.musicbrainz_live_view;
+    if (!active) {
+        SetWindowPos(state.metadata_list,nullptr,frame.left,frame.top,
+            (std::max)(8,width),(std::max)(8,height),
+            SWP_NOZORDER|SWP_NOACTIVATE);
+        ShowWindow(state.musicbrainz_details,SW_HIDE);
+        ShowWindow(state.musicbrainz_details_label,SW_HIDE);
+        return;
+    }
+    const int detail_height=(std::clamp)(height/3,82,180);
+    const int top_height=(std::max)(70,height-detail_height-19);
+    HDWP defer=BeginDeferWindowPos(3);
+    if (!defer) return;
+    defer=DeferWindowPos(defer,state.metadata_list,nullptr,
+        frame.left,frame.top,width,top_height,
+        SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
+    if (!defer) return;
+    defer=DeferWindowPos(defer,state.musicbrainz_details_label,nullptr,
+        frame.left,frame.top+top_height+2,width,14,
+        SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
+    if (!defer) return;
+    defer=DeferWindowPos(defer,state.musicbrainz_details,nullptr,
+        frame.left,frame.top+top_height+17,width,
+        (std::max)(35,height-top_height-17),
+        SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
+    if (!defer) return;
+    EndDeferWindowPos(defer);
+    ShowWindow(state.musicbrainz_details_label,SW_SHOW);
+    ShowWindow(state.musicbrainz_details,SW_SHOW);
+    // Lower details table uses the same responsive width as the result list.
+    const int widths[]={28,23,32,17};
+    for (int i=0;i<4;++i)
+        ListView_SetColumnWidth(state.musicbrainz_details,i,
+            (std::max)(44,(width-8)*widths[i]/100));
+}
+
+void refresh_musicbrainz_detail_rows(PreviewState& state) {
+    if (!state.musicbrainz_details) return;
+    ListView_DeleteAllItems(state.musicbrainz_details);
+    if (!state.show_candidate || !state.musicbrainz_live_view ||
+        state.candidate_source_index!=state.selected_track_index) return;
+    const int selected=ListView_GetNextItem(state.metadata_list,-1,LVNI_SELECTED);
+    if (selected<0 ||
+        static_cast<std::size_t>(selected)>=state.candidate_view_order.size()) return;
+    const std::size_t index=state.candidate_view_order[static_cast<std::size_t>(selected)];
+    if (index>=state.musicbrainz_detail_groups.size()) return;
+    const auto& detail=state.musicbrainz_detail_groups[index];
+    for (std::size_t i=0;i<detail.size()&&i<50;++i) {
+        const auto& row=detail[i];
+        LVITEMW item{};
+        item.mask=LVIF_TEXT;
+        item.iItem=static_cast<int>(i);
+        auto field=from_utf8(row.field);
+        item.pszText=field.data();
+        const int inserted=ListView_InsertItem(state.musicbrainz_details,&item);
+        if (inserted<0) break;
+        auto local=show_field_values(row.original_values);
+        auto proposed=show_field_values(row.candidate.values);
+        const wchar_t* status=row.state==djmeta::online::FieldReviewState::Blocked
+            ? L"Blocked":row.state==djmeta::online::FieldReviewState::Unchanged
+            ? L"No change":L"Review";
+        ListView_SetItemText(state.musicbrainz_details,inserted,1,local.data());
+        ListView_SetItemText(state.musicbrainz_details,inserted,2,proposed.data());
+        ListView_SetItemText(state.musicbrainz_details,inserted,3,
+                             const_cast<LPWSTR>(status));
+    }
+}
+
+void update_musicbrainz_browse_headers(PreviewState& state) {
+    if (!state.show_candidate || !state.metadata_list) return;
+    const bool browse=state.musicbrainz_live_view;
+    const wchar_t* names[5]={L"Field",L"Original",L"Proposed",L"Source",L"Status"};
+    if (browse) {
+        names[0]=state.musicbrainz_release_loaded?L"Album / Track":L"Recording / Release";
+        names[1]=state.musicbrainz_release_loaded?L"Current":L"Artist";
+        names[2]=state.musicbrainz_release_loaded?L"Suggested":L"Date";
+        names[3]=L"Source";
+        names[4]=state.musicbrainz_release_loaded?L"Match":L"MB rank";
+    }
+    for(int i=0;i<5;++i) {
+        LVCOLUMNW column{};
+        column.mask=LVCF_TEXT;
+        column.pszText=const_cast<LPWSTR>(names[i]);
+        ListView_SetColumn(state.metadata_list,i,&column);
+    }
+    if (browse) {
+        RECT bounds{};
+        GetClientRect(state.metadata_list,&bounds);
+        const int width=bounds.right-bounds.left-8;
+        const int proportions[]={33,21,19,15,12};
+        for(int i=0;i<5;++i)
+            ListView_SetColumnWidth(state.metadata_list,i,
+                (std::max)(52,width*proportions[i]/100));
+    }
+}
+
 void update_metadata_table(PreviewState& state) {
     if (state.show_candidate) {
         const bool selected_valid = state.selected_track_index < state.entries.size();
