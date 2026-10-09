@@ -238,6 +238,9 @@ for label, token in (
     ("bounded manual parser", "djmeta::online::parse_manual_candidate(text)"),
     ("CUE candidate scope identity", "state->cue_candidate_comparison_mode"),
     ("CUE candidate manual review", "djmeta::online::review_manual_cue_candidate("),
+    ("pasted provider source label", 'L"Pasted: " + from_utf8(item.candidate.provider)'),
+    ("unverified provider tooltip", 'L"Source: manual paste, provider unverified"'),
+
     ("CUE source re-read on import", "const auto cue = djmeta::inspect_cue_metadata(raw.raw_text, raw.carrier)"),
     ("no virtual fallback", "read_cue_raw_on_demand(entry.handle, entry.input.source_path)"),
 
