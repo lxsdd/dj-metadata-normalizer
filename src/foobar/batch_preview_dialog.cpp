@@ -18,6 +18,7 @@
 #include "djmeta/batch_preview.h"
 #include "djmeta/metadata_diff.h"
 #include "djmeta/online_intake.h"
+#include "djmeta/cue_manual_preview.h"
 #include "djmeta/physical_selection.h"
 #include "djmeta/review_decisions.h"
 #include "djmeta/track_review.h"
@@ -76,6 +77,7 @@ struct PreviewState {
     bool show_metadata = true;
     bool show_candidate = false; // third tab, never a write path
     bool cue_inspection_mode = false; // exact CUE source view, no online proposal
+    bool cue_candidate_comparison_mode = false; // evidence-only CUE field diff
     bool show_whitespace = false;
     std::size_t candidate_source_index = (std::numeric_limits<std::size_t>::max)();
     std::vector<djmeta::online::FieldReviewRow> candidate_rows;
@@ -475,8 +477,11 @@ void update_metadata_table(PreviewState& state) {
             state.entries[state.selected_track_index].input.physical_source_qualified &&
             !is_external_cue_locator(
                 state.entries[state.selected_track_index].input.source_path);
+        const bool selected_cue_preview = selected_valid &&
+            state.candidate_source_index == state.selected_track_index &&
+            (state.cue_inspection_mode || state.cue_candidate_comparison_mode);
         EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_IMPORT_CANDIDATE),
-                     physical ? TRUE : FALSE);
+                     (physical || selected_cue_preview) ? TRUE : FALSE);
         const bool cue_readable = selected_valid &&
             (is_external_cue_locator(
                 state.entries[state.selected_track_index].input.source_path) ||
@@ -484,7 +489,8 @@ void update_metadata_table(PreviewState& state) {
         EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_INSPECT_CUE),
                      cue_readable ? TRUE : FALSE);
         state.candidate_view_order.clear();
-        if ((physical || state.cue_inspection_mode) &&
+        if ((physical || state.cue_inspection_mode ||
+             state.cue_candidate_comparison_mode) &&
             state.selected_track_index == state.candidate_source_index) {
             for (std::size_t i = 0; i < state.candidate_rows.size(); ++i)
                 state.candidate_view_order.push_back(i);
@@ -506,11 +512,16 @@ void update_metadata_table(PreviewState& state) {
             ? L"Select an audio file or CUE to inspect. No files are written."
             : state.cue_inspection_mode &&
               state.candidate_source_index == state.selected_track_index
-            ? L"Source CUE metadata displayed read-only. Album, track and FILE records are "
-              L"separate. No online candidate was fetched; no tags were written."
+            ? L"Source CUE metadata displayed read-only. To compare a clipboard candidate, "
+              L"use @scope=edition for album, or @scope=recording and "
+              L"@cue_track_ordinal=N for an exact CUE track. No tags were written."
+            : state.cue_candidate_comparison_mode &&
+              state.candidate_source_index == state.selected_track_index
+            ? L"CUE comparison only (album / exact track scope). Review/Blocked are "
+              L"not write approvals. No CUE or audio file was changed."
             : !physical
-            ? L"Clipboard comparison requires a physical audio track. For an external "
-              L".cue, click Inspect CUE. Virtual chapter writing remains blocked."
+            ? L"Select Inspect CUE first, then Import clipboard to compare source "
+              L"metadata. Direct virtual-subtrack writes remain blocked."
             : !state.candidate_view_order.empty()
             ? L"Candidate loaded for the selected track. No change / Review / Blocked are "
               L"comparison statuses, not write approvals. No tags were written."
@@ -1868,6 +1879,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             state->candidate_rows = std::move(fields);
             state->candidate_source_index = state->selected_track_index;
             state->cue_inspection_mode = true;
+            state->cue_candidate_comparison_mode = false;
             update_metadata_table(*state);
             return TRUE;
         }
@@ -1878,20 +1890,39 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             const auto& entry = state->entries[state->selected_track_index];
             verify_snapshot(entry);
             verify_rules_snapshot(state->captured_rules);
-            if (!entry.input.physical_source_qualified ||
-                is_external_cue_locator(entry.input.source_path))
-                throw std::invalid_argument(
-                    "This selection has no qualified physical track identity. "
-                    "Choose a physical audio file for candidate comparison.");
+            const bool compare_cue =
+                (state->cue_inspection_mode || state->cue_candidate_comparison_mode) &&
+                state->candidate_source_index == state->selected_track_index;
             const auto text = read_manual_clipboard_text(dialog);
             const auto user_candidate = djmeta::online::parse_manual_candidate(text);
-            const auto ref = entry.handle->get_info_ref();
-            const auto original = metadata_from_file_info(ref->info());
-            auto rows = djmeta::online::review_online_fields(
-                original, user_candidate.fields);
+            std::vector<djmeta::online::FieldReviewRow> rows;
+            if (compare_cue) {
+                // Dedicated CUE reader: exact external bytes or a qualified
+                // physical subsong-0 CUESHEET. A generic virtual file_info
+                // must never become the source or target of a CUE write.
+                const auto raw =
+                    read_cue_raw_on_demand(entry.handle, entry.input.source_path);
+                const auto cue = djmeta::inspect_cue_metadata(raw.raw_text, raw.carrier);
+                rows = djmeta::online::review_manual_cue_candidate(
+                    cue, user_candidate);
+            } else {
+                if (!entry.input.physical_source_qualified ||
+                    is_external_cue_locator(entry.input.source_path))
+                    throw std::invalid_argument(
+                        "Select a qualified physical audio file, or choose "
+                        "Inspect CUE first to compare a CUE.");
+                if (user_candidate.cue_track_ordinal)
+                    throw std::invalid_argument(
+                        "@cue_track_ordinal applies only to CUE comparison.");
+                const auto ref = entry.handle->get_info_ref();
+                const auto original = metadata_from_file_info(ref->info());
+                rows = djmeta::online::review_online_fields(
+                    original, user_candidate.fields);
+            }
             state->candidate_rows = std::move(rows);
             state->candidate_source_index = state->selected_track_index;
             state->cue_inspection_mode = false;
+            state->cue_candidate_comparison_mode = compare_cue;
             update_metadata_table(*state);
             return TRUE;
         }
