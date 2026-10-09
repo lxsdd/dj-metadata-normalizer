@@ -65,6 +65,14 @@ int main() {
            has(uncertain_result.conflicts, "isrc_conflict"),
            "conflicting ISRC must require review, never force a tag update");
 
+    Candidate missing_mix_name = strong;
+    missing_mix_name.provider_track_id = "134";
+    missing_mix_name.identity.mix_name.clear();
+    const auto missing_name_result = compare(original, missing_mix_name);
+    expect(missing_name_result.decision == MatchDecision::Review &&
+           has(missing_name_result.conflicts, "named_mix_missing_on_one_side"),
+           "named remix on only one side requires manual review");
+
     const RecordingIdentity simple{"Sample", "DJ", "", MixKind::Unknown, "", 200000};
     Candidate loose{"discogs", "10", {"Sample", "DJ", "", MixKind::Unknown, "", 201000}};
     const auto loose_result = compare(simple, loose);
