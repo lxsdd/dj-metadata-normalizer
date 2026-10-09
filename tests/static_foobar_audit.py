@@ -230,6 +230,10 @@ for ui_file in ("preview.cpp", "routing_preview.cpp", "prepare_dialog.cpp",
 # the normalizer approval handler or perform a provider network request.
 for label, token in (
     ("candidate comparison tab", 'L"Candidate comparison"'),
+    ("on-demand CUE button", "IDC_METADATA_INSPECT_CUE"),
+    ("read-only host CUE reader", "read_cue_raw_on_demand(entry.handle, entry.input.source_path)"),
+    ("raw CUE parser", "djmeta::inspect_cue_metadata(raw.raw_text, raw.carrier)"),
+    ("cue inventory presentation", "cue_inventory_read_only"),
     ("clipboard command", "IDC_METADATA_IMPORT_CANDIDATE"),
     ("bounded manual parser", "djmeta::online::parse_manual_candidate(text)"),
     ("field evidence review", "djmeta::online::review_online_fields("),
@@ -243,6 +247,10 @@ for label, token in (
 ):
     if token not in batch_table_dialog:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing read-only candidate gate: " + label)
+if "IDC_METADATA_INSPECT_CUE" not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing read-only CUE inspect control")
+if 'GENERIC_READ' not in sources or 'OPEN_EXISTING' not in sources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: CUE reader must use existing read-only file")
 if "IDC_METADATA_IMPORT_CANDIDATE" not in resources:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing native clipboard import control")
 if "online_intake.h" not in batch_table_dialog:
