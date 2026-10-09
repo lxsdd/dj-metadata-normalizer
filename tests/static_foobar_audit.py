@@ -129,6 +129,20 @@ menu_settings = (foobar / "menu_settings.cpp").read_text(encoding="utf-8")
 menu_preferences = (foobar / "menu_preferences.cpp").read_text(encoding="utf-8")
 prepare_dialog = (foobar / "prepare_dialog.cpp").read_text(encoding="utf-8")
 batch_table_dialog = (foobar / "batch_preview_dialog.cpp").read_text(encoding="utf-8")
+# Modeless must be a genuine owned-lifetime foobar workspace. Reject a cosmetic
+# minimize flag on a blocking modal dialog, stranded state or unpaired manager.
+for token in ("CreateDialogParamW(", "modeless_dialog_manager::g_add(dialog)",
+              "modeless_dialog_manager::g_remove(dialog)", "WM_NCDESTROY",
+              "DestroyWindow(dialog)", "g_pending_state", "g_workspace",
+              "same_workspace_selection", "revalidate_workspace",
+              "refresh_workspace_snapshot", "initquit_factory_t<workspace_shutdown>",
+              "IDC_BATCH_REFRESH", "observed_source_guard"):
+    if token not in batch_table_dialog:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: modeless/stale lifecycle missing " + token)
+for forbidden in ("DialogBoxParamW(", "EndDialog("):
+    if forbidden in batch_table_dialog:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: blocking modal preview " + forbidden)
+
 layout_storage = (foobar / "batch_table_settings.cpp").read_text(encoding="utf-8")
 route_preview = (foobar / "routing_preview.cpp").read_text(encoding="utf-8")
 legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf-8")
