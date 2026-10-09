@@ -259,6 +259,15 @@ inline bool align_label_to_input(HWND dialog, int label_id, int input_id) {
 // Align real native input text rows rather than assuming edit/combo fonts
 // occupy the same vertical pixels as themed pushbutton captions. Repeated
 // WM_SIZE calls use current control geometry, so alignment is idempotent.
+// LVN_ITEMACTIVATE is the ListView's platform-native user intent for
+// double-click and keyboard activation. Never allow it to trigger network
+// access on an unrelated tab, physical-recording hit or loaded track list.
+inline bool may_activate_musicbrainz_release(UINT notification,
+    bool live, bool release_search, bool release_loaded, bool source_matches) {
+    return notification==LVN_ITEMACTIVATE && live && release_search &&
+           !release_loaded && source_matches;
+}
+
 inline bool align_native_action_row(HWND dialog, int input_id,
                                      int button_id, bool combo,
                                      int optical_offset_px = 0) {
