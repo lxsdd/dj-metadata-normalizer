@@ -4,6 +4,7 @@
 
 #include "batch_preview_dialog.h"
 #include "host_file_probe.h"
+#include "cue_readonly_source.h"
 #include "batch_table_settings.h"
 #include "legacy_routing_profiles.h"
 #include "native_preview_controls.h"
@@ -82,7 +83,8 @@ struct PreviewState {
     HWND metadata_scope = nullptr;
     HWND tabs = nullptr;
     bool show_metadata = true;
-    bool show_candidate = false; // third tab: user-supplied evidence, always read-only
+    bool show_candidate = false; // third tab, never a write path
+    bool cue_inspection_mode = false; // exact CUE source view, no online proposal
     bool show_whitespace = false;
     std::size_t candidate_source_index = (std::numeric_limits<std::size_t>::max)();
     std::vector<djmeta::online::FieldReviewRow> candidate_rows;
@@ -344,6 +346,7 @@ std::wstring track_master_cell(PreviewState& state, std::size_t row, int col) {
         if (state.candidate_source_index != index) return L"—";
         const auto& rows = state.candidate_rows;
         if (col == 1) return std::to_wstring(rows.size());
+        if (state.cue_inspection_mode) return L"0";
         const auto kind = col == 2 ? djmeta::online::FieldReviewState::NeedsReview
                                    : djmeta::online::FieldReviewState::Blocked;
         return std::to_wstring(static_cast<std::size_t>(std::count_if(
@@ -417,6 +420,19 @@ std::wstring show_field_values(const std::vector<std::string>& values) {
 
 std::wstring candidate_cell_text(const djmeta::online::FieldReviewRow& item,
                                  int column) {
+    const bool cue_inventory = item.reason == "cue_inventory_read_only" ||
+                               item.reason == "cue_inventory_unqualified";
+    if (cue_inventory) {
+        switch (column) {
+        case 0: return from_utf8(item.field);
+        case 1: return show_field_values(item.original_values);
+        case 2: return L""; // no online proposal exists; don't suggest approval
+        case 3: return from_utf8(item.candidate.provider);
+        case 4: return item.reason == "cue_inventory_unqualified"
+            ? L"Unqualified" : L"Read-only";
+        default: return {};
+        }
+    }
     switch (column) {
     case 0: return from_utf8(item.field);
     case 1: return show_field_values(item.original_values);
@@ -470,8 +486,15 @@ void update_metadata_table(PreviewState& state) {
                 state.entries[state.selected_track_index].input.source_path);
         EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_IMPORT_CANDIDATE),
                      physical ? TRUE : FALSE);
+        const bool cue_readable = selected_valid &&
+            (is_external_cue_locator(
+                state.entries[state.selected_track_index].input.source_path) ||
+             (physical && state.entries[state.selected_track_index].handle->get_subsong_index() == 0));
+        EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_INSPECT_CUE),
+                     cue_readable ? TRUE : FALSE);
         state.candidate_view_order.clear();
-        if (physical && state.selected_track_index == state.candidate_source_index) {
+        if ((physical || state.cue_inspection_mode) &&
+            state.selected_track_index == state.candidate_source_index) {
             for (std::size_t i = 0; i < state.candidate_rows.size(); ++i)
                 state.candidate_view_order.push_back(i);
             const int sort_column = state.candidate_sort_column;
@@ -489,10 +512,14 @@ void update_metadata_table(PreviewState& state) {
         InvalidateRect(state.metadata_list, nullptr, FALSE);
         InvalidateRect(state.metadata_track_list, nullptr, FALSE); // counts may change after import
         const std::wstring hint = !selected_valid
-            ? L"No track is selected. Select one physical audio track."
+            ? L"Select an audio file or CUE to inspect. No files are written."
+            : state.cue_inspection_mode &&
+              state.candidate_source_index == state.selected_track_index
+            ? L"Source CUE metadata displayed read-only. Album, track and FILE records are "
+              L"separate. No online candidate was fetched; no tags were written."
             : !physical
-            ? L"Selected source is a CUE, virtual subsong or unqualified physical file. "
-              L"Choose a uniquely qualified MP3 or other physical audio file."
+            ? L"Clipboard comparison requires a physical audio track. For an external "
+              L".cue, click Inspect CUE. Virtual chapter writing remains blocked."
             : !state.candidate_view_order.empty()
             ? L"Candidate loaded for the selected track. No change / Review / Blocked are "
               L"comparison statuses, not write approvals. No tags were written."
@@ -604,6 +631,8 @@ void show_preview_page(HWND dialog, PreviewState& state,
     state.show_metadata = metadata;
     state.show_candidate = candidate;
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_IMPORT_CANDIDATE),
+        candidate ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(dialog, IDC_METADATA_INSPECT_CUE),
         candidate ? SW_SHOW : SW_HIDE);
     const wchar_t* headers[2] = { candidate ? L"Source" : L"Safety",
                                    candidate ? L"Status" : L"Decision" };
@@ -928,7 +957,8 @@ void capture_resize_layout(PreviewState& state) {
             id != IDC_METADATA_TRACK_LIST &&
             id != IDC_BATCH_TABS &&
             layout.original.top >= current.initial_list_bottom;
-        layout.shift_right = id == IDC_METADATA_IMPORT_CANDIDATE ||
+        layout.shift_right = id == IDC_METADATA_INSPECT_CUE ||
+                             id == IDC_METADATA_IMPORT_CANDIDATE ||
                              id == IDC_METADATA_USE_VALUE ||
                              id == IDC_BATCH_APPLY_SELECTED ||
                              id == IDC_BATCH_APPLY_ALL || id == IDCANCEL;
@@ -1738,6 +1768,67 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     const int id = LOWORD(wp);
     const auto native_command = native_preview_command(message, wp);
     try {
+        if (id == IDC_METADATA_INSPECT_CUE && HIWORD(wp) == BN_CLICKED) {
+            if (!state->show_candidate ||
+                state->selected_track_index >= state->entries.size())
+                throw std::invalid_argument("Select one audio/CUE source to inspect.");
+            const auto& entry = state->entries[state->selected_track_index];
+            verify_snapshot(entry);
+            verify_rules_snapshot(state->captured_rules);
+            const auto raw = read_cue_raw_on_demand(entry.handle, entry.input.source_path);
+            const auto inventory =
+                djmeta::inspect_cue_metadata(raw.raw_text, raw.carrier);
+            if (inventory.status == djmeta::CueSyntaxStatus::Invalid ||
+                inventory.encoding == djmeta::CueTextEncoding::Unknown ||
+                inventory.encoding == djmeta::CueTextEncoding::UnsupportedUtf16)
+                throw std::invalid_argument(
+                    "CUE syntax or encoding is not qualified for read-only inventory.");
+            std::vector<djmeta::online::FieldReviewRow> fields;
+            const auto add_field = [&](const std::string& label,
+                                       const djmeta::CueMetadataField& field,
+                                       const std::string& source) {
+                if (fields.size() >= 10000)
+                    throw std::invalid_argument("CUE inventory display exceeds 10,000 rows.");
+                djmeta::online::FieldReviewRow row;
+                row.field = label + field.name;
+                row.original_values.push_back(field.value);
+                row.candidate.provider = source;
+                row.candidate.source_id = "cue-line:" +
+                    std::to_string(field.line_number);
+                row.reason = inventory.status == djmeta::CueSyntaxStatus::Parsed
+                    ? "cue_inventory_read_only" : "cue_inventory_unqualified";
+                fields.push_back(std::move(row));
+            };
+            const auto carrier = raw.carrier == djmeta::CueCarrierKind::ExternalText
+                ? std::string("External CUE") : std::string("Embedded CUE");
+            for (const auto& field : inventory.globals)
+                add_field("Album / ", field, carrier);
+            for (const auto& track : inventory.tracks) {
+                const auto source = carrier + " / FILE #" +
+                    std::to_string(track.file_reference_index + 1) +
+                    " / TRACK " + std::to_string(track.declared_track_number);
+                for (const auto& field : track.local_fields)
+                    add_field("Track " + std::to_string(track.declared_track_number) +
+                              " / ", field, source);
+            }
+            for (std::size_t i = 0; i < inventory.files.size(); ++i) {
+                if (fields.size() >= 10000)
+                    throw std::invalid_argument("CUE inventory display exceeds 10,000 rows.");
+                djmeta::online::FieldReviewRow row;
+                row.field = "FILE #" + std::to_string(i + 1) + " / FILE";
+                row.original_values.push_back(inventory.files[i].filename);
+                row.candidate.provider = carrier + " / structure";
+                row.candidate.source_id = "cue-line:" +
+                    std::to_string(inventory.files[i].line_number);
+                row.reason = "cue_inventory_read_only";
+                fields.push_back(std::move(row));
+            }
+            state->candidate_rows = std::move(fields);
+            state->candidate_source_index = state->selected_track_index;
+            state->cue_inspection_mode = true;
+            update_metadata_table(*state);
+            return TRUE;
+        }
         if (id == IDC_METADATA_IMPORT_CANDIDATE && HIWORD(wp) == BN_CLICKED) {
             if (!state->show_candidate ||
                 state->selected_track_index >= state->entries.size())
@@ -1758,6 +1849,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                 original, user_candidate.fields);
             state->candidate_rows = std::move(rows);
             state->candidate_source_index = state->selected_track_index;
+            state->cue_inspection_mode = false;
             update_metadata_table(*state);
             return TRUE;
         }
