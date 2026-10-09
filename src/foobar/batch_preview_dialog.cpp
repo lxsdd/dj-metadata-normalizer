@@ -2388,6 +2388,9 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             state->musicbrainz_kind=kind;
             state->musicbrainz_live_view=true;
             state->musicbrainz_release_loaded=false;
+            state->updating_musicbrainz_selection=true;
+            ListView_SetItemState(state->metadata_list,-1,0,LVIS_SELECTED);
+            state->updating_musicbrainz_selection=false;
             state->cue_inspection_mode=false;
             state->cue_candidate_comparison_mode=false;
             update_metadata_table(*state);
