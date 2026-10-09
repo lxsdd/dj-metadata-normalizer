@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "musicbrainz_http.h"
+#include "djmeta/musicbrainz_provider.h"
 
 #include <winhttp.h>
 #include <windows.h>
@@ -27,24 +28,45 @@ void must(bool success, const char* detail) {
     if (!success) throw std::runtime_error(detail);
 }
 bool safe_path(std::string_view path) {
-    // Host must never accept an arbitrary URL, authority or user-provided
-    // domain, even if another part of the program later changes its caller.
-    if (path.size()>2048 || path.empty()) return false;
-    const bool search =
-        path.starts_with("/ws/2/recording?query=") ||
-        path.starts_with("/ws/2/release?query=");
-    const bool lookup =
-        path.starts_with("/ws/2/release/") &&
-        path.find("?inc=recordings%2Bartist-credits%2Bisrcs&fmt=json") !=
-            std::string_view::npos;
-    if (!search && !lookup) return false;
-    for (unsigned char ch : path)
-        if (ch < 0x21 || ch > 0x7e || ch=='#' || ch=='\\')
+    // Origin, endpoint, query grammar and release identity are all fixed.
+    // No user-controlled host, port, relative path, redirect, HTTP method or
+    // arbitrary query parameters may cross this WinHTTP boundary.
+    if (path.empty() || path.size()>2048) return false;
+    for (unsigned char ch:path)
+        if (ch<0x21 || ch>0x7e || ch=='#' || ch=='\\')
             return false;
-    if (path.find("://")!=std::string_view::npos ||
-        path.find("//")!=std::string_view::npos)
-        return false;
-    return true;
+    constexpr std::string_view search_suffix="&fmt=json&limit=8";
+    for (const std::string_view prefix : {
+        std::string_view("/ws/2/recording?query="),
+        std::string_view("/ws/2/release?query=")}) {
+        if (!path.starts_with(prefix) || !path.ends_with(search_suffix)) continue;
+        const auto encoded=path.substr(prefix.size(),
+            path.size()-prefix.size()-search_suffix.size());
+        if (encoded.empty()) return false;
+        for (std::size_t i=0;i<encoded.size();++i) {
+            const unsigned char c=encoded[i];
+            if ((c>='A'&&c<='Z') || (c>='a'&&c<='z') ||
+                (c>='0'&&c<='9') || c=='-' || c=='_' ||
+                c=='.' || c=='~') continue;
+            if (c!='%' || i+2>=encoded.size()) return false;
+            const auto hex=[](unsigned char h) {
+                return (h>='0'&&h<='9') ||
+                    (h>='A'&&h<='F') || (h>='a'&&h<='f');
+            };
+            if (!hex(encoded[i+1]) || !hex(encoded[i+2])) return false;
+            i+=2;
+        }
+        return true;
+    }
+    constexpr std::string_view lookup_prefix="/ws/2/release/";
+    constexpr std::string_view lookup_suffix=
+        "?inc=recordings%2Bartist-credits%2Bisrcs&fmt=json";
+    if (path.starts_with(lookup_prefix) && path.ends_with(lookup_suffix)) {
+        const auto id=path.substr(lookup_prefix.size(),
+            path.size()-lookup_prefix.size()-lookup_suffix.size());
+        return djmeta::online::musicbrainz::valid_mbid(id);
+    }
+    return false;
 }
 std::mutex request_clock_mutex;
 std::uint64_t last_request_tick = 0;
