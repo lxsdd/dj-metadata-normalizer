@@ -109,7 +109,11 @@ CueMetadataInventory inspect_cue_metadata(
         source.size() > 8u * 1024u * 1024u) return out;
 
     std::set<std::pair<std::size_t, int>> track_numbers_per_file;
-    std::size_t line_number = 0, offset = 0, file_count = 0;
+    // Match the FILE inventory's initial UTF-8 BOM handling: the BOM is
+    // transport metadata, not part of the first CUE command or raw value.
+    const std::size_t initial_offset =
+        out.encoding == CueTextEncoding::Utf8Bom ? 3u : 0u;
+    std::size_t line_number = 0, offset = initial_offset, file_count = 0;
     std::size_t current_track = none;
     while (offset < source.size()) {
         if (++line_number > 100000) {
