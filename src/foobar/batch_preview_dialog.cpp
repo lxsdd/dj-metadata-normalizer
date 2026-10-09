@@ -2076,8 +2076,18 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                                 item.reason == "cue_inventory_unqualified";
                             const bool official_musicbrainz =
                                 item.reason.starts_with("musicbrainz_live_");
-                            const std::wstring label =
-                                std::wstring(is_cue_inventory
+                            const bool browse_result =
+                                item.reason.starts_with("musicbrainz_live_candidate_rank_");
+                            const std::wstring label = browse_result
+                                ? (L"Source: official MusicBrainz HTTPS search"
+                                   L"\nTitle: " + from_utf8(item.field) +
+                                   L"\nArtist: " + show_field_values(item.original_values) +
+                                   L"\nEdition date: " +
+                                       show_field_values(item.candidate.values) +
+                                   L"\nMusicBrainz ID: " +
+                                       from_utf8(item.candidate.source_id) +
+                                   L"\nRank is only API search relevance, NOT match confidence.")
+                                : std::wstring(is_cue_inventory
                                     ? L"Source: actual local CUE carrier"
                                     : official_musicbrainz
                                     ? L"Source: official MusicBrainz HTTPS API (read-only)"
