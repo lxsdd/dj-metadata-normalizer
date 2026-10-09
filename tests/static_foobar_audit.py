@@ -238,6 +238,13 @@ for label, token in (
     ("bounded manual parser", "djmeta::online::parse_manual_candidate(text)"),
     ("CUE candidate scope identity", "state->cue_candidate_comparison_mode"),
     ("CUE candidate manual review", "djmeta::online::review_manual_cue_candidate("),
+    ("MusicBrainz result group detail", "group_musicbrainz_release_rows("),
+    ("MusicBrainz one row per hit", "state->candidate_rows=std::move(rows.summary)"),
+    ("MusicBrainz separate field details", "refresh_musicbrainz_detail_rows(state)"),
+    ("MusicBrainz stable candidate id", "state->candidate_rows[rowid].candidate.source_id"),
+    ("position/mode restored", "load_batch_preview_window_placement()"),
+    ("native maximize", "WS_MAXIMIZEBOX"),
+
     ("user clicked official MusicBrainz search", "id == IDC_METADATA_MB_SEARCH && HIWORD(wp) == BN_CLICKED"),
     ("official lookup is separate user action", "id == IDC_METADATA_MB_LOAD_RELEASE && HIWORD(wp)==BN_CLICKED"),
     ("fixed-host reader", "fetch_musicbrainz_json_readonly(path)"),
