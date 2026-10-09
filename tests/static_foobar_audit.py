@@ -225,6 +225,26 @@ for ui_file in ("preview.cpp", "routing_preview.cpp", "prepare_dialog.cpp",
             raise SystemExit("STATIC FOOBAR AUDIT FAIL: non-English UI in " +
                              ui_file + ": " + forbidden_ui)
 
+# The third preview tab must be a read-only evidence view. Every clipboard
+# comparison revalidates physical source and rules; it must never reach
+# the normalizer approval handler or perform a provider network request.
+for label, token in (
+    ("candidate comparison tab", 'L"Candidate comparison"'),
+    ("clipboard command", "IDC_METADATA_IMPORT_CANDIDATE"),
+    ("bounded manual parser", "djmeta::online::parse_manual_candidate(text)"),
+    ("field evidence review", "djmeta::online::review_online_fields("),
+    ("pre-import source check", "verify_snapshot(entry)"),
+    ("pre-import rules check", "verify_rules_snapshot(state->captured_rules)"),
+    ("physical qualification", "entry.input.physical_source_qualified"),
+    ("candidate guard", "if (state->show_candidate && (native_command == PreviewCommand::Accept"),
+):
+    if token not in batch_table_dialog:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing read-only candidate gate: " + label)
+if "IDC_METADATA_IMPORT_CANDIDATE" not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing native clipboard import control")
+if "online_intake.h" not in batch_table_dialog:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: candidate parser not linked to foobar UI")
+
 if "IDC_METADATA_TRACK_LIST" not in resources or "IDC_METADATA_FILTER" not in resources:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: track master/metadata filter missing from production resources")
 if "ShowWindow(state.metadata_track_list" not in batch_table_dialog:
