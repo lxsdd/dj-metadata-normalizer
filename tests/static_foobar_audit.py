@@ -236,6 +236,11 @@ for label, token in (
     ("cue inventory presentation", "cue_inventory_read_only"),
     ("clipboard command", "IDC_METADATA_IMPORT_CANDIDATE"),
     ("bounded manual parser", "djmeta::online::parse_manual_candidate(text)"),
+    ("CUE candidate scope identity", "state->cue_candidate_comparison_mode"),
+    ("CUE candidate manual review", "djmeta::online::review_manual_cue_candidate("),
+    ("CUE source re-read on import", "const auto cue = djmeta::inspect_cue_metadata(raw.raw_text, raw.carrier)"),
+    ("no virtual fallback", "read_cue_raw_on_demand(entry.handle, entry.input.source_path)"),
+
     ("field evidence review", "djmeta::online::review_online_fields("),
     ("pre-import source check", "verify_snapshot(entry)"),
     ("pre-import rules check", "verify_rules_snapshot(state->captured_rules)"),
