@@ -306,7 +306,7 @@ struct MusicBrainzPaneBounds {
     RECT details{};
 };
 inline MusicBrainzPaneBounds musicbrainz_pane_bounds(RECT frame,int dpi) {
-    const int height=(std::max)(0,frame.bottom-frame.top);
+    const int height=(std::max<int>)(0,frame.bottom-frame.top);
     const int detail_height=(std::clamp)(height/3,98,210);
     const int gap=(std::max)(26,MulDiv(29,dpi,96));
     const int top_height=(std::max)(70,height-detail_height-gap);
