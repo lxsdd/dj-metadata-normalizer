@@ -49,7 +49,7 @@ int main() {
           external.tracks[0].declared_track_number == 1 &&
           external.tracks[1].declared_track_number == 1,
           "multi FILE supports repeated track 01 on different discs");
-    check(external.globals.size() == 4 && external.tracks[0].local_fields.size() == 4 &&
+    check(external.globals.size() == 5 && external.tracks[0].local_fields.size() == 4 &&
           external.tracks[1].local_fields.size() == 1,
           "unknown REM, INDEX, FILE and pseudo-FILE in comments never become metadata");
     const auto& title = external.tracks[0].local_fields[0];
