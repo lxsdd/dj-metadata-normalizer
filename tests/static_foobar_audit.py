@@ -235,6 +235,9 @@ for label, token in (
     ("field evidence review", "djmeta::online::review_online_fields("),
     ("pre-import source check", "verify_snapshot(entry)"),
     ("pre-import rules check", "verify_rules_snapshot(state->captured_rules)"),
+    ("CUE path rejection", "is_external_cue_locator(entry.input.source_path)"),
+    ("candidate dedicated order", "candidate_sort_column"),
+    ("candidate source-specific tooltip", "state->candidate_view_order[row]"),
     ("physical qualification", "entry.input.physical_source_qualified"),
     ("candidate guard", "if (state->show_candidate && (native_command == PreviewCommand::Accept"),
 ):

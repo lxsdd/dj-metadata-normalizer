@@ -87,6 +87,8 @@ struct PreviewState {
     std::size_t candidate_source_index = (std::numeric_limits<std::size_t>::max)();
     std::vector<djmeta::online::FieldReviewRow> candidate_rows;
     std::vector<std::size_t> candidate_view_order; // independent of normalization rows
+    int candidate_sort_column = 0;
+    bool candidate_sort_descending = false;
     djmeta::ReviewGridLayout<4> track_grid;
     djmeta::ReviewGridLayout<5> detail_grid;
     bool updating_track_selection = false;
@@ -107,6 +109,20 @@ struct PreviewState {
     // Visible ListView item index -> underlying input row identity.
     std::vector<std::size_t> view_order;
 };
+
+// External CUE files may appear as top-level physical handles in foobar. They
+// are not audio-file tag targets. Never trust subsong == 0 alone here.
+bool is_external_cue_locator(std::string_view path) {
+    if (path.size() < 4) return false;
+    auto tail = path.substr(path.size() - 4);
+    const char last[] = {'.', 'c', 'u', 'e'};
+    for (std::size_t i = 0; i < 4; ++i) {
+        const char c = tail[i] >= 'A' && tail[i] <= 'Z'
+            ? static_cast<char>(tail[i] - 'A' + 'a') : tail[i];
+        if (c != last[i]) return false;
+    }
+    return true;
+}
 
 std::wstring from_utf8(std::string_view text) {
     if (text.empty()) return {};
@@ -449,20 +465,22 @@ void update_metadata_table(PreviewState& state) {
     if (state.show_candidate) {
         const bool selected_valid = state.selected_track_index < state.entries.size();
         const bool physical = selected_valid &&
-            state.entries[state.selected_track_index].input.physical_source_qualified;
+            state.entries[state.selected_track_index].input.physical_source_qualified &&
+            !is_external_cue_locator(
+                state.entries[state.selected_track_index].input.source_path);
         EnableWindow(GetDlgItem(state.dialog, IDC_METADATA_IMPORT_CANDIDATE),
                      physical ? TRUE : FALSE);
         state.candidate_view_order.clear();
         if (physical && state.selected_track_index == state.candidate_source_index) {
             for (std::size_t i = 0; i < state.candidate_rows.size(); ++i)
                 state.candidate_view_order.push_back(i);
-            const int sort_column = state.detail_grid.sort_column;
+            const int sort_column = state.candidate_sort_column;
             std::stable_sort(state.candidate_view_order.begin(),
                              state.candidate_view_order.end(),
                 [&](std::size_t a, std::size_t b) {
                     const auto left = candidate_cell_text(state.candidate_rows[a], sort_column);
                     const auto right = candidate_cell_text(state.candidate_rows[b], sort_column);
-                    return state.detail_grid.sort_descending ? left > right : left < right;
+                    return state.candidate_sort_descending ? left > right : left < right;
                 });
         }
         ListView_SetItemCountEx(state.metadata_list,
@@ -578,6 +596,12 @@ void update_master_table(PreviewState& state) {
                                   selected, state.selected_track_index);
     state.updating_track_selection = false;
     InvalidateRect(state.metadata_track_list, nullptr, FALSE);
+    auto sort_view = state.detail_grid;
+    if (candidate) {
+        sort_view.sort_column = state.candidate_sort_column;
+        sort_view.sort_descending = state.candidate_sort_descending;
+    }
+    show_review_grid_sort_arrow(state.metadata_list, sort_view);
 }
 
 void show_preview_page(HWND dialog, PreviewState& state,
@@ -1528,14 +1552,28 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<const NMLISTVIEW*>(lp);
             if (click->iSubItem >= 0 && click->iSubItem < 5) {
-                if (click->iSubItem == state->detail_grid.sort_column)
-                    state->detail_grid.sort_descending = !state->detail_grid.sort_descending;
-                else {
-                    state->detail_grid.sort_column = click->iSubItem;
-                    state->detail_grid.sort_descending = false;
+                if (state->show_candidate) {
+                    if (click->iSubItem == state->candidate_sort_column)
+                        state->candidate_sort_descending = !state->candidate_sort_descending;
+                    else {
+                        state->candidate_sort_column = click->iSubItem;
+                        state->candidate_sort_descending = false;
+                    }
+                    update_metadata_table(*state);
+                    auto sort_view = state->detail_grid;
+                    sort_view.sort_column = state->candidate_sort_column;
+                    sort_view.sort_descending = state->candidate_sort_descending;
+                    show_review_grid_sort_arrow(state->metadata_list, sort_view);
+                } else {
+                    if (click->iSubItem == state->detail_grid.sort_column)
+                        state->detail_grid.sort_descending = !state->detail_grid.sort_descending;
+                    else {
+                        state->detail_grid.sort_column = click->iSubItem;
+                        state->detail_grid.sort_descending = false;
+                    }
+                    update_metadata_table(*state);
+                    show_review_grid_sort_arrow(state->metadata_list, state->detail_grid);
                 }
-                update_metadata_table(*state);
-                show_review_grid_sort_arrow(state->metadata_list, state->detail_grid);
             }
             return TRUE;
         }
@@ -1706,7 +1744,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             const auto& entry = state->entries[state->selected_track_index];
             verify_snapshot(entry);
             verify_rules_snapshot(state->captured_rules);
-            if (!entry.input.physical_source_qualified)
+            if (!entry.input.physical_source_qualified ||
+                is_external_cue_locator(entry.input.source_path))
                 throw std::invalid_argument(
                     "This selection has no qualified physical track identity. "
                     "Choose a physical audio file for candidate comparison.");
