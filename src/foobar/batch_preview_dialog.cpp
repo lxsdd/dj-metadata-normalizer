@@ -851,7 +851,8 @@ void capture_resize_layout(PreviewState& state) {
             id != IDC_METADATA_TRACK_LIST &&
             id != IDC_BATCH_TABS &&
             layout.original.top >= current.initial_list_bottom;
-        layout.shift_right = id == IDC_METADATA_USE_VALUE ||
+        layout.shift_right = id == IDC_METADATA_IMPORT_CANDIDATE ||
+                             id == IDC_METADATA_USE_VALUE ||
                              id == IDC_BATCH_APPLY_SELECTED ||
                              id == IDC_BATCH_APPLY_ALL || id == IDCANCEL;
         current.resize_controls.push_back(layout);
