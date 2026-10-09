@@ -1601,7 +1601,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                                 item.reason == "cue_inventory_read_only" ||
                                 item.reason == "cue_inventory_unqualified";
                             const std::wstring label =
-                                (is_cue_inventory
+                                std::wstring(is_cue_inventory
                                     ? L"Source: actual local CUE carrier"
                                     : L"Source: manual paste, provider unverified") +
                                 L"\nDeclared provider: " + from_utf8(item.candidate.provider) +
