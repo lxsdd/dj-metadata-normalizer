@@ -256,6 +256,62 @@ inline bool align_label_to_input(HWND dialog, int label_id, int input_id) {
                         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) != 0;
 }
 
+// Align real native input text rows rather than assuming edit/combo fonts
+// occupy the same vertical pixels as themed pushbutton captions. Repeated
+// WM_SIZE calls use current control geometry, so alignment is idempotent.
+inline bool align_native_action_row(HWND dialog, int input_id,
+                                     int button_id, bool combo,
+                                     int optical_offset_px = 0) {
+    const HWND input=GetDlgItem(dialog,input_id);
+    const HWND button=GetDlgItem(dialog,button_id);
+    if (!input || !button) return false;
+    RECT input_rect{}, button_rect{}, outer_rect{};
+    if (!GetWindowRect(input,&outer_rect) ||
+        !GetWindowRect(button,&button_rect)) return false;
+    input_rect=outer_rect;
+    if (combo) {
+        COMBOBOXINFO info{};
+        info.cbSize=sizeof(info);
+        if (!GetComboBoxInfo(input,&info)) return false;
+        input_rect=info.rcItem;
+    }
+    const int actual_middle=input_rect.top+(input_rect.bottom-input_rect.top)/2;
+    const int button_middle=button_rect.top+(button_rect.bottom-button_rect.top)/2;
+    const int delta=button_middle+optical_offset_px-actual_middle;
+    if (delta == 0) return true;
+    return SetWindowPos(input,nullptr,0,outer_rect.top+delta,0,0,
+                        SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE)!=FALSE;
+}
+
+// Set *all* fields with explicit LVIF_TEXT rather than relying on a
+// ListView_SetItemText macro binding that can silently leave subitems blank.
+// Caller keeps metadata data in its own immutable candidate model.
+inline bool insert_native_preview_detail_row(HWND list, int index,
+    const std::wstring& field, const std::wstring& original,
+    const std::wstring& proposed, const std::wstring& status) {
+    if (!list || index<0) return false;
+    LVITEMW first{};
+    first.mask=LVIF_TEXT;
+    first.iItem=index;
+    first.iSubItem=0;
+    first.pszText=const_cast<LPWSTR>(field.c_str());
+    const int inserted=ListView_InsertItemW(list,&first);
+    if (inserted<0) return false;
+    const std::wstring* values[]={&original,&proposed,&status};
+    for(int column=1;column<4;++column) {
+        LVITEMW item{};
+        item.mask=LVIF_TEXT;
+        item.iItem=inserted;
+        item.iSubItem=column;
+        item.pszText=const_cast<LPWSTR>(values[column-1]->c_str());
+        if (!ListView_SetItemW(list,&item)) {
+            ListView_DeleteItem(list,inserted);
+            return false;
+        }
+    }
+    return true;
+}
+
 inline void align_native_preview_form(HWND dialog) {
     constexpr int rows[][2] = {
         {IDC_METADATA_FILTER_LABEL, IDC_METADATA_FILTER},
@@ -266,6 +322,14 @@ inline void align_native_preview_form(HWND dialog) {
     };
     for (const auto& row : rows)
         align_label_to_input(dialog, row[0], row[1]);
+    // Theme-dependent text in a standard EDIT normally sits slightly higher
+    // than text in a PUSHBUTTON with the same outer frame height.
+    align_native_action_row(dialog, IDC_METADATA_MB_QUERY,
+                            IDC_METADATA_MB_SEARCH, false, 2);
+    // The combo RC height includes its dropdown; align *rcItem* with the
+    // adjacent action buttons, not the full expanded list rectangle.
+    align_native_action_row(dialog, IDC_METADATA_REVIEW_SCOPE,
+                            IDC_METADATA_ACCEPT, true, 0);
 }
 
 } // namespace djmeta_foobar
