@@ -247,7 +247,18 @@ foreach(target IN ITEMS djmeta_online_release_tests djmeta_online_release_fuzz_t
     endif()
 endforeach()
 
+# Immutable online field-evidence preview, independent of host/HTTP.
+add_executable(djmeta_online_fields_tests tests/online_fields_tests.cpp)
+target_include_directories(djmeta_online_fields_tests PRIVATE include)
+target_compile_features(djmeta_online_fields_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_online_fields_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_online_fields_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_online_fields_tests COMMAND djmeta_online_fields_tests)
 add_test(NAME djmeta_online_release_tests COMMAND djmeta_online_release_tests)
 add_test(NAME djmeta_online_release_fuzz_tests COMMAND djmeta_online_release_fuzz_tests)
 add_test(NAME djmeta_online_match_tests COMMAND djmeta_online_match_tests)
