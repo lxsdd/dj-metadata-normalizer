@@ -238,6 +238,13 @@ for label, token in (
     ("bounded manual parser", "djmeta::online::parse_manual_candidate(text)"),
     ("CUE candidate scope identity", "state->cue_candidate_comparison_mode"),
     ("CUE candidate manual review", "djmeta::online::review_manual_cue_candidate("),
+    ("user clicked official MusicBrainz search", "id == IDC_METADATA_MB_SEARCH && HIWORD(wp) == BN_CLICKED"),
+    ("official lookup is separate user action", "id == IDC_METADATA_MB_LOAD_RELEASE && HIWORD(wp)==BN_CLICKED"),
+    ("fixed-host reader", "fetch_musicbrainz_json_readonly(path)"),
+    ("official MusicBrainz parser", "djmeta::online::musicbrainz::parse_search(reply,kind)"),
+    ("no stale online match", "CUE changed during online search"),
+    ("source verified only via HTTP reason", 'item.reason.starts_with("musicbrainz_live_")'),
+
     ("pasted provider source label", 'L"Pasted: " + from_utf8(item.candidate.provider)'),
     ("unverified provider tooltip", 'L"Source: manual paste, provider unverified"'),
 
@@ -255,6 +262,19 @@ for label, token in (
 ):
     if token not in batch_table_dialog:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing read-only candidate gate: " + label)
+for token in ("IDC_METADATA_MB_QUERY", "IDC_METADATA_MB_SEARCH", "IDC_METADATA_MB_LOAD_RELEASE"):
+    if token not in resources:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing official MusicBrainz control: " + token)
+# Explicit trusted-host read-only transport is permitted; generic web scraping
+# or transport in core is NOT. Do not overfit the previous offline-only policy.
+online_transport = (foobar / "musicbrainz_http.cpp").read_text(encoding="utf-8")
+for token in ("WinHttpOpen(", "WINHTTP_FLAG_SECURE", 'L"musicbrainz.org"',
+              "WINHTTP_OPTION_REDIRECT_POLICY_NEVER", "GENERIC_WRITE"):
+    if token == "GENERIC_WRITE":
+        if token in online_transport:
+            raise SystemExit("STATIC FOOBAR AUDIT FAIL: MusicBrainz adapter contains a writer")
+    elif token not in online_transport:
+        raise SystemExit("STATIC FOOBAR AUDIT FAIL: official MusicBrainz network boundary: " + token)
 if "IDC_METADATA_INSPECT_CUE" not in resources:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: missing read-only CUE inspect control")
 if 'GENERIC_READ' not in sources or 'OPEN_EXISTING' not in sources:
