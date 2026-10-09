@@ -68,9 +68,14 @@ int main() {
     check(album_genre.present && album_genre.inherited &&
           album_genre.value == "Melodic Trance",
           "genre has explicit inherited provenance");
-    check(!effective_cue_field(external, 1, "TITLE").present &&
+    check(effective_cue_field(external, 1, "TITLE").value == "Sunset" &&
           effective_cue_field(external, 0, "TITLE").value == "Sunrise (Original Mix)",
-          "album TITLE is never treated as missing track TITLE");
+          "individual track TITLEs are independent of album TITLE");
+    const auto without_track_title = inspect_cue_metadata(
+        "TITLE Album\nFILE x.flac WAVE\nTRACK 01 AUDIO\n",
+        CueCarrierKind::ExternalText);
+    check(!effective_cue_field(without_track_title, 0, "TITLE").present,
+          "missing track TITLE never inherits the album TITLE");
     check(effective_cue_field(external, 0, "ISRC").present &&
           !effective_cue_field(external, 1, "ISRC").present,
           "track ISRC never inherits from global metadata");
