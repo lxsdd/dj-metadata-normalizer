@@ -2851,7 +2851,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     return FALSE;
 }
 
-class workspace_shutdown final : public initquit {
+class workspace_shutdown : public initquit {
 public:
     void on_init() override {}
     void on_quit() override {
