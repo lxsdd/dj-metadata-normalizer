@@ -4,7 +4,7 @@ Status: **DESIGN / READ-ONLY FOUNDATION** (2026-10-09). Not a shipping tagger, n
 
 ## 0. Product decision and non-negotiable invariants
 
-Add online candidate discovery and comparison to **DJ Metadata Normalizer**, not a standalone tagging program and not a fork of Discogger. Preserve the existing unified **Prepare Tracks** workflow, shared deterministic rules engine, native foobar2000 Settings/context menus, read-only Bridge, and DJ Library as a future optional review surface.
+Add online candidate discovery and comparison to **Music Metadata Studio**, not a standalone tagging program and not a fork of Discogger. Preserve the existing unified **Prepare Tracks** workflow, shared deterministic rules engine, native foobar2000 Settings/context menus, read-only Bridge, and DJ Library as a future optional review surface.
 
 A successful user journey: select track(s) in foobar -> open one Prepare Tracks window -> optional **Find metadata** action -> inspect ranked recording/release candidates from chosen permitted sources -> compare each proposed field with local originals -> resolve uncertainties -> preview normalization and consequent naming/routing in the same window -> explicitly approve -> later execute through qualified host adapters with complete no-op and stale checks.
 
@@ -14,7 +14,7 @@ User priority: functional completeness, natural foobar integration, intuitive op
 
 ## 1. Confirmed repo / ecosystem baseline
 
-* Canonical repo: `lxsdd/dj-metadata-normalizer`. On 2026-10-09 main is commit `b0f6501cc4c4c1a61768c21f6d55dda5336ae041` (2026-10-08 UTC).
+* Canonical project **Music Metadata Studio**: GitHub slug is currently `lxsdd/dj-metadata-normalizer` until the owner renames the same repository to `lxsdd/music-metadata-studio`. On 2026-10-09 main is commit `b0f6501cc4c4c1a61768c21f6d55dda5336ae041` (2026-10-08 UTC).
 * Existing C++20 core provides immutable metadata vectors, SHA-256 metadata fingerprints, stable per-rule provenance, SAFE / CONFIDENT / REVIEW, native foobar preview with a one-row-per-track master/detail view and a unified naming/routing preview; currently **no productive writers**.
 * Metadata isolation defect learned in foobar v2.25.10/2.26 previews: writing a virtual subsong's projected `file_info` can drop unrepresented *physical* ID3 fields. Therefore only a qualified physical metadata writer can commit physical changes, cue edits have dedicated routing, and ambiguous virtual edits are hard-blocked.
 * Existing component uses the official 2026-10-01 foobar2000 SDK pin; user-specific naming preferences and profile-specific settings belong to foobar, while the shared versioned rule file remains at `%APPDATA%\DJMetadataNormalizer\ruleset.json`.
