@@ -487,6 +487,7 @@ void update_metadata_table(PreviewState& state) {
             static_cast<int>(state.candidate_view_order.size()),
             LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
         InvalidateRect(state.metadata_list, nullptr, FALSE);
+        InvalidateRect(state.metadata_track_list, nullptr, FALSE); // counts may change after import
         const std::wstring hint = !selected_valid
             ? L"No track is selected. Select one physical audio track."
             : !physical
@@ -613,9 +614,9 @@ void show_preview_page(HWND dialog, PreviewState& state,
         ListView_SetColumn(state.metadata_list, i + 3, &col);
     }
     const wchar_t* track_headers[3] = {
-        candidate ? L"Fields" : L"Music",
-        candidate ? L"Changes" : L"Other",
-        candidate ? L"Blocked" : L"Review"
+        candidate ? L"Tags" : L"Music",
+        candidate ? L"Diffs" : L"Other",
+        candidate ? L"Block" : L"Review"
     };
     for (int i = 0; i < 3; ++i) {
         LVCOLUMNW col{};
