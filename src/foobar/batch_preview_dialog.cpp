@@ -16,6 +16,7 @@
 
 #include "djmeta/batch_preview.h"
 #include "djmeta/metadata_diff.h"
+#include "djmeta/online_intake.h"
 #include "djmeta/physical_selection.h"
 #include "djmeta/review_decisions.h"
 #include "djmeta/track_review.h"
@@ -81,7 +82,10 @@ struct PreviewState {
     HWND metadata_scope = nullptr;
     HWND tabs = nullptr;
     bool show_metadata = true;
+    bool show_candidate = false; // third tab: user-supplied evidence, always read-only
     bool show_whitespace = false;
+    std::size_t candidate_source_index = (std::numeric_limits<std::size_t>::max)();
+    std::vector<djmeta::online::FieldReviewRow> candidate_rows;
     djmeta::ReviewGridLayout<4> track_grid;
     djmeta::ReviewGridLayout<5> detail_grid;
     bool updating_track_selection = false;
@@ -131,6 +135,33 @@ std::string to_utf8(std::wstring_view text) {
         text.data(), size, out.data(), bytes, nullptr, nullptr) != bytes)
         throw std::runtime_error("Unicode conversion failed.");
     return out;
+}
+
+std::string read_manual_clipboard_text(HWND dialog) {
+    if (!OpenClipboard(dialog))
+        throw std::runtime_error("Cannot open clipboard.");
+    struct CloseClipboardGuard {
+        ~CloseClipboardGuard() { CloseClipboard(); }
+    } closer;
+    HANDLE value = GetClipboardData(CF_UNICODETEXT);
+    if (!value)
+        throw std::invalid_argument(
+            "Copy a plain-text candidate first. Clipboard has no Unicode text.");
+    const SIZE_T bytes = GlobalSize(value);
+    if (!bytes || bytes > 131074 || bytes % sizeof(wchar_t) != 0)
+        throw std::invalid_argument("Clipboard candidate exceeds size limit.");
+    const wchar_t* text = static_cast<const wchar_t*>(GlobalLock(value));
+    if (!text) throw std::runtime_error("Cannot read clipboard text.");
+    const std::size_t max_chars = bytes / sizeof(wchar_t);
+    std::size_t length = 0;
+    while (length < max_chars && text[length] != L'\0') ++length;
+    if (length == max_chars) {
+        GlobalUnlock(value);
+        throw std::invalid_argument("Clipboard text is not null-terminated.");
+    }
+    std::wstring captured(text, length);
+    GlobalUnlock(value);
+    return to_utf8(captured);
 }
 
 std::wstring read_control(HWND window, int id) {
@@ -342,8 +373,39 @@ void refresh_review_summaries(PreviewState& state) {
     }
 }
 
+std::wstring show_field_values(const std::vector<std::string>& values) {
+    if (values.empty()) return L"(missing)";
+    std::wstring result;
+    for (const auto& value : values) {
+        if (!result.empty()) result += L" | ";
+        try {
+            result += from_utf8(value);
+        } catch (const std::exception&) {
+            result += L"(invalid UTF-8 in existing tag)";
+        }
+    }
+    return result;
+}
+
 std::wstring metadata_cell_text(PreviewState& state,
                                 std::size_t row, int column) {
+    if (state.show_candidate) {
+        if (state.candidate_source_index != state.selected_track_index ||
+            row >= state.candidate_rows.size()) return {};
+        const auto& item = state.candidate_rows[row];
+        switch (column) {
+        case 0: return from_utf8(item.field);
+        case 1: return show_field_values(item.original_values);
+        case 2: return show_field_values(item.candidate.values);
+        case 3: return from_utf8(item.candidate.provider);
+        case 4:
+            return item.state == djmeta::online::FieldReviewState::Unchanged
+                ? L"No change" :
+                item.state == djmeta::online::FieldReviewState::NeedsReview
+                ? L"Review" : L"Blocked";
+        default: return {};
+        }
+    }
     if (row >= state.metadata_view_order.size()) return {};
     const auto index = state.metadata_view_order[row];
     if (index >= state.focused_metadata_rows.size()) return {};
@@ -366,6 +428,20 @@ std::wstring metadata_cell_text(PreviewState& state,
 }
 
 void update_metadata_table(PreviewState& state) {
+    if (state.show_candidate) {
+        const auto count = state.selected_track_index == state.candidate_source_index
+            ? state.candidate_rows.size() : std::size_t{0};
+        ListView_SetItemCountEx(state.metadata_list,
+            static_cast<int>(count), LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+        InvalidateRect(state.metadata_list, nullptr, FALSE);
+        const std::wstring hint = count
+            ? L"Clipboard evidence is user-supplied and unverified. Read-only: no tags were written. "
+              L"No provider data was fetched."
+            : L"Select one track and click Import clipboard to compare manually supplied metadata. "
+              L"Format: @provider, @id, then FIELD=VALUE. No tags are written.";
+        SetDlgItemTextW(state.dialog, IDC_BATCH_HINT, hint.c_str());
+        return;
+    }
     // Preserve source-local proposal identity rather than virtual row position.
     std::set<std::size_t> selected_proposals;
     if (state.metadata_list &&
@@ -464,23 +540,36 @@ void update_master_table(PreviewState& state) {
     InvalidateRect(state.metadata_track_list, nullptr, FALSE);
 }
 
-void show_preview_page(HWND dialog, PreviewState& state, bool metadata) {
+void show_preview_page(HWND dialog, PreviewState& state,
+                       bool metadata, bool candidate = false) {
     state.show_metadata = metadata;
+    state.show_candidate = candidate;
+    ShowWindow(GetDlgItem(dialog, IDC_METADATA_IMPORT_CANDIDATE),
+        candidate ? SW_SHOW : SW_HIDE);
+    const wchar_t* headers[2] = { candidate ? L"Source" : L"Safety",
+                                   candidate ? L"Status" : L"Decision" };
+    for (int i = 0; i < 2; ++i) {
+        LVCOLUMNW col{};
+        col.mask = LVCF_TEXT;
+        col.pszText = const_cast<LPWSTR>(headers[i]);
+        ListView_SetColumn(state.metadata_list, i + 3, &col);
+    }
     ShowWindow(state.metadata_list, metadata ? SW_SHOW : SW_HIDE);
     ShowWindow(state.metadata_track_list, metadata ? SW_SHOW : SW_HIDE);
-    ShowWindow(state.metadata_filter, metadata ? SW_SHOW : SW_HIDE);
-    ShowWindow(state.metadata_track_filter, metadata ? SW_SHOW : SW_HIDE);
-    ShowWindow(state.metadata_scope, metadata ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.metadata_filter, metadata && !candidate ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.metadata_track_filter, metadata && !candidate ? SW_SHOW : SW_HIDE);
+    ShowWindow(state.metadata_scope, metadata && !candidate ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_VISIBLE_WHITESPACE),
-               metadata ? SW_SHOW : SW_HIDE);
+               metadata && !candidate ? SW_SHOW : SW_HIDE);
     for (int id : {IDC_METADATA_ACCEPT, IDC_METADATA_REJECT,
                    IDC_METADATA_RESET, IDC_METADATA_MANUAL_INPUT,
                    IDC_METADATA_USE_VALUE})
-        ShowWindow(GetDlgItem(dialog,id), metadata ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(dialog,id),
+                   metadata && !candidate ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER_LABEL),
-        metadata ? SW_SHOW : SW_HIDE);
+        metadata && !candidate ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_FILTER_LABEL),
-        metadata ? SW_SHOW : SW_HIDE);
+        metadata && !candidate ? SW_SHOW : SW_HIDE);
     ShowWindow(state.list, metadata ? SW_HIDE : SW_SHOW);
     for (int id : {IDC_BATCH_ROUTE_LABEL,
                    IDC_BATCH_DEST_LABEL, IDC_BATCH_PATTERN_LABEL,
@@ -1144,7 +1233,7 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         if (!state->list || !state->metadata_list || !state->metadata_track_list ||
             !state->metadata_filter || !state->metadata_track_filter ||
             !state->metadata_scope || !state->tabs) return FALSE;
-        for (const wchar_t* name : {L"Metadata changes", L"File locations"}) {
+        for (const wchar_t* name : {L"Metadata changes", L"File locations", L"Candidate comparison"}) {
             TCITEMW tab{};
             tab.mask = TCIF_TEXT;
             tab.pszText = const_cast<wchar_t*>(name);
@@ -1271,7 +1360,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         const auto* header = reinterpret_cast<const NMHDR*>(lp);
         if (header && header->idFrom == IDC_BATCH_TABS &&
             header->code == TCN_SELCHANGE) {
-            show_preview_page(dialog, *state, TabCtrl_GetCurSel(state->tabs) == 0);
+            const int selected_tab = TabCtrl_GetCurSel(state->tabs);
+            show_preview_page(dialog, *state, selected_tab != 1, selected_tab == 2);
             return TRUE;
         }
         if (header && header->idFrom == IDC_METADATA_TRACK_LIST &&
@@ -1538,6 +1628,33 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     const int id = LOWORD(wp);
     const auto native_command = native_preview_command(message, wp);
     try {
+        if (id == IDC_METADATA_IMPORT_CANDIDATE && HIWORD(wp) == BN_CLICKED) {
+            if (!state->show_candidate ||
+                state->selected_track_index >= state->entries.size())
+                throw std::invalid_argument("Select a track before importing a candidate.");
+            const auto& entry = state->entries[state->selected_track_index];
+            verify_snapshot(entry);
+            verify_rules_snapshot(state->captured_rules);
+            if (!entry.input.physical_source_qualified)
+                throw std::invalid_argument(
+                    "This selection has no qualified physical track identity. "
+                    "Choose a physical audio file for candidate comparison.");
+            const auto text = read_manual_clipboard_text(dialog);
+            const auto user_candidate = djmeta::online::parse_manual_candidate(text);
+            const auto ref = entry.handle->get_info_ref();
+            const auto original = metadata_from_file_info(ref->info());
+            auto rows = djmeta::online::review_online_fields(
+                original, user_candidate.fields);
+            state->candidate_rows = std::move(rows);
+            state->candidate_source_index = state->selected_track_index;
+            update_metadata_table(*state);
+            return TRUE;
+        }
+        // Candidate comparisons are evidence only, not normalization decisions.
+        if (state->show_candidate && (native_command == PreviewCommand::Accept ||
+            native_command == PreviewCommand::Reject ||
+            native_command == PreviewCommand::Reset ||
+            native_command == PreviewCommand::ManualValue)) return TRUE;
         if (native_command == PreviewCommand::VisibleWhitespaceChanged) {
             state->show_whitespace = SendDlgItemMessageW(
                 dialog, IDC_METADATA_VISIBLE_WHITESPACE,
