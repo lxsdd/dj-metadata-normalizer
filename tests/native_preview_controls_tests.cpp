@@ -127,6 +127,82 @@ int main() {
           candidate_rect.top >= 0 && candidate_rect.bottom <= candidate_client_bounds.bottom,
           "candidate import button fits minimum dialog size");
 
+    // Exercise the same atomic resize adapter as the production preview
+    // using its genuine dialog resource.  New toolbar buttons must not
+    // intersect or paint outside the expanded client rect.
+    auto bounds_in_dialog = [&](HWND control) {
+        RECT r{};
+        check(GetWindowRect(control, &r) != FALSE,
+              "real native child bounds are available");
+        MapWindowPoints(HWND_DESKTOP, dialog, reinterpret_cast<POINT*>(&r), 2);
+        return r;
+    };
+    RECT initial_window{};
+    check(GetWindowRect(dialog, &initial_window) != FALSE,
+          "initial production dialog window bounds readable");
+    const int window_width = initial_window.right - initial_window.left;
+    const int window_height = initial_window.bottom - initial_window.top;
+    std::vector<djmeta_foobar::NativePreviewResizeChild> movable;
+    for (const int id : {
+        IDC_METADATA_INSPECT_CUE, IDC_METADATA_IMPORT_CANDIDATE,
+        IDC_METADATA_TRACK_LIST, IDC_METADATA_LIST
+    }) {
+        djmeta_foobar::NativePreviewResizeChild control;
+        control.window = GetDlgItem(dialog, id);
+        check(control.window != nullptr, "resource resize target exists");
+        control.original = bounds_in_dialog(control.window);
+        control.shift_right = id == IDC_METADATA_INSPECT_CUE ||
+                              id == IDC_METADATA_IMPORT_CANDIDATE;
+        movable.push_back(control);
+    }
+    constexpr int extra_width = 310;
+    constexpr int extra_height = 180;
+    check(SetWindowPos(dialog, nullptr, 0, 0,
+            window_width + extra_width, window_height + extra_height,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE,
+          "native dialog can expand horizontally and vertically");
+    check(djmeta_foobar::apply_native_preview_resize(movable,
+            GetDlgItem(dialog, IDC_METADATA_TRACK_LIST),
+            GetDlgItem(dialog, IDC_METADATA_LIST),
+            extra_width, extra_height),
+          "shared production atomic resize succeeds");
+    RECT inspect_after = bounds_in_dialog(cue_inspect);
+    RECT import_after = bounds_in_dialog(candidate_import);
+    RECT expanded_client{};
+    GetClientRect(dialog, &expanded_client);
+    check(inspect_after.right + 8 <= import_after.left &&
+          import_after.right <= expanded_client.right &&
+          inspect_after.left > 0 && import_after.top >= 0 &&
+          import_after.bottom <= expanded_client.bottom,
+          "resized buttons stay separate and inside the native client area");
+    check(inspect_after.left == movable[0].original.left + extra_width &&
+          import_after.left == movable[1].original.left + extra_width,
+          "both actions remain aligned to right edge with stable spacing");
+    RECT master_after = bounds_in_dialog(GetDlgItem(dialog, IDC_METADATA_TRACK_LIST));
+    RECT detail_after = bounds_in_dialog(GetDlgItem(dialog, IDC_METADATA_LIST));
+    check(master_after.right < detail_after.left &&
+          detail_after.right <= expanded_client.right &&
+          master_after.bottom == movable[2].original.bottom + extra_height &&
+          detail_after.bottom == movable[3].original.bottom + extra_height,
+          "resized two-pane tables retain separation without child overlay");
+    check(SetWindowPos(dialog, nullptr, 0, 0, window_width, window_height,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE &&
+          djmeta_foobar::apply_native_preview_resize(movable,
+              GetDlgItem(dialog, IDC_METADATA_TRACK_LIST),
+              GetDlgItem(dialog, IDC_METADATA_LIST), 0, 0),
+          "shrinking back to initial native geometry succeeds");
+    const RECT inspect_restored = bounds_in_dialog(cue_inspect);
+    const RECT import_restored = bounds_in_dialog(candidate_import);
+    check(inspect_restored.left == movable[0].original.left &&
+          import_restored.left == movable[1].original.left &&
+          inspect_restored.right + 8 <= import_restored.left,
+          "no cumulative resize drift or overlapping paint region");
+    const DWORD dialog_style = static_cast<DWORD>(
+        GetWindowLongPtrW(dialog, GWL_STYLE));
+    check((dialog_style & WS_CLIPCHILDREN) != 0 &&
+          (dialog_style & WS_CLIPSIBLINGS) != 0,
+          "production dialog clips child/sibling paint regions on resize");
+
     HWND review_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
     HWND manual = GetDlgItem(dialog, IDC_METADATA_MANUAL_INPUT);
     check(review_scope && manual &&
