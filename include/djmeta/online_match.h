@@ -127,6 +127,10 @@ inline CandidateMatch compare(const RecordingIdentity& local, const Candidate& r
         ambiguous = true;
         result.conflicts.push_back("named_mix_unverified");
     }
+    if (local_mix_name.empty() != remote_mix_name.empty()) {
+        ambiguous = true;
+        result.conflicts.push_back("named_mix_missing_on_one_side");
+    }
 
     const auto local_isrc = normalized_isrc(local.isrc);
     const auto remote_isrc = normalized_isrc(remote.identity.isrc);
