@@ -1,7 +1,7 @@
 # Candidate comparison — local read-only clipboard intake
 
 **Status:** physical-track clipboard preview and Inspect CUE native UI accepted in foobar; **new CUE-specific clipboard comparison** remains subject to exact-head CI and a separate installed-host read-only acceptance.
-The **Candidate comparison** tab in `Music Metadata Studio → Prepare Tracks (Preview)` accepts a deliberately structured plain-text candidate that you copied or authored yourself. It **never automatically fetches** Beatport, Discogs, Deezer, Spotify, or other services, never logs into third-party sites, and never writes tags/files. It is an initial zero-cost/offline fallback alongside planned authorized provider connectors.
+The **Candidate comparison** tab in `Music Metadata Studio → Prepare Tracks (Preview)` accepts a deliberately structured plain-text candidate that you copied or authored yourself. **Source column `Pasted: discogs` identifies only the user's declared provider; it is not a Discogs API result or source verification.** The tooltip retains the declared source ID and marks the claim unverified. It **never automatically fetches** Beatport, Discogs, Deezer, Spotify, or other services, never logs into third-party sites, and never writes tags/files. It is an initial zero-cost/offline fallback alongside planned authorized provider connectors.
 
 ## How to try it (after the exact candidate build passes CI and installed-host QA)
 
