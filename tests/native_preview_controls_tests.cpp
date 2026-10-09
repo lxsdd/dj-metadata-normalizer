@@ -108,15 +108,15 @@ int main() {
     check(candidate_import != nullptr,
           "production candidate comparison clipboard import button exists");
     RECT candidate_rect{};
-    RECT client_rect{};
+    RECT candidate_client_bounds{};
     check(GetWindowRect(candidate_import, &candidate_rect) != FALSE &&
-          GetClientRect(dialog, &client_rect) != FALSE,
+          GetClientRect(dialog, &candidate_client_bounds) != FALSE,
           "candidate import button geometry readable");
     MapWindowPoints(HWND_DESKTOP, dialog,
                     reinterpret_cast<POINT*>(&candidate_rect), 2);
     check(candidate_rect.left >= 0 &&
-          candidate_rect.right <= client_rect.right &&
-          candidate_rect.top >= 0 && candidate_rect.bottom <= client_rect.bottom,
+          candidate_rect.right <= candidate_client_bounds.right &&
+          candidate_rect.top >= 0 && candidate_rect.bottom <= candidate_client_bounds.bottom,
           "candidate import button fits minimum dialog size");
 
     HWND review_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
