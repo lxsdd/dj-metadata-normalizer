@@ -297,6 +297,27 @@ inline bool align_native_action_row(HWND dialog, int input_id,
                         SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE)!=FALSE;
 }
 
+// Structural bounds for the two-level MusicBrainz browser. The caption
+// belongs to its own positive-height line and MUST NOT collide with the
+// nested ListView's column header at 100%-200% DPI.
+struct MusicBrainzPaneBounds {
+    RECT hits{};
+    RECT caption{};
+    RECT details{};
+};
+inline MusicBrainzPaneBounds musicbrainz_pane_bounds(RECT frame,int dpi) {
+    const int height=(std::max)(0,frame.bottom-frame.top);
+    const int detail_height=(std::clamp)(height/3,98,210);
+    const int gap=(std::max)(26,MulDiv(29,dpi,96));
+    const int top_height=(std::max)(70,height-detail_height-gap);
+    const int upper_end=frame.top+top_height;
+    return {
+        {frame.left,frame.top,frame.right,upper_end},
+        {frame.left,upper_end+5,frame.right,upper_end+23},
+        {frame.left,upper_end+gap,frame.right,frame.bottom}
+    };
+}
+
 // Set *all* fields with explicit LVIF_TEXT rather than relying on a
 // ListView_SetItemText macro binding that can silently leave subitems blank.
 // Caller keeps metadata data in its own immutable candidate model.
