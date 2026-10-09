@@ -5,6 +5,7 @@
 #include "resource.h"
 #include <windows.h>
 #include <commctrl.h>
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <set>
@@ -180,6 +181,54 @@ inline bool apply_review_split_geometry(HWND master_list, HWND detail_list,
            SetWindowPos(detail_list, nullptr, next.detail.left, next.detail.top,
                         next.detail.right - next.detail.left,
                         next.detail.bottom - next.detail.top, flags) != FALSE;
+}
+
+// Single atomic move for all native dialog controls.  Moving siblings one by
+// one during WM_SIZE left stale button invalidation/overlap artifacts. The
+// original rectangles are always the unresized resource geometry, so repeated
+// drag-resizes cannot accumulate rounding drift.
+struct NativePreviewResizeChild {
+    HWND window = nullptr;
+    RECT original{};
+    bool stretch_width = false;
+    bool stretch_height = false;
+    bool shift_down = false;
+    bool shift_right = false;
+};
+
+inline bool apply_native_preview_resize(
+    const std::vector<NativePreviewResizeChild>& children,
+    HWND master_list, HWND detail_list, int width_delta, int height_delta) {
+    if (children.empty() || children.size() > 256) return false;
+    const RECT* master = nullptr;
+    const RECT* detail = nullptr;
+    for (const auto& child : children) {
+        if (child.window == master_list) master = &child.original;
+        if (child.window == detail_list) detail = &child.original;
+    }
+    const auto split = master && detail
+        ? review_split_geometry(*master, *detail, width_delta, height_delta)
+        : ReviewSplitGeometry{};
+    HDWP defer = BeginDeferWindowPos(static_cast<int>(children.size()));
+    if (!defer) return false;
+    for (const auto& child : children) {
+        if (!IsWindow(child.window)) continue;
+        const RECT& source = child.window == master_list && master ? split.master :
+                             child.window == detail_list && detail ? split.detail :
+                             child.original;
+        const bool split_child = child.window == master_list || child.window == detail_list;
+        const int x = source.left + (!split_child && child.shift_right ? width_delta : 0);
+        const int y = source.top + (!split_child && child.shift_down ? height_delta : 0);
+        const int w = source.right - source.left +
+            (!split_child && child.stretch_width ? width_delta : 0);
+        const int h = source.bottom - source.top +
+            (!split_child && child.stretch_height ? height_delta : 0);
+        defer = DeferWindowPos(defer, child.window, nullptr, x, y,
+            (std::max)(8, w), (std::max)(8, h),
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+        if (!defer) return false;
+    }
+    return EndDeferWindowPos(defer) != FALSE;
 }
 
 inline bool align_label_to_input(HWND dialog, int label_id, int input_id) {
