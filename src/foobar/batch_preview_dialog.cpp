@@ -833,6 +833,19 @@ void update_musicbrainz_browse_headers(PreviewState& state) {
 
 void update_metadata_table(PreviewState& state) {
     if (state.show_candidate) {
+        // Candidate counts describe result identities, not field-change rows.
+        // Update headers when entering live search, not just on tab switch.
+        const wchar_t* candidate_headers[3]={
+            state.musicbrainz_live_view?L"Hits":L"Tags",
+            state.musicbrainz_live_view?L"—":L"Diffs",
+            state.musicbrainz_live_view?L"Unmatched":L"Block"
+        };
+        for (int i=0;i<3;++i) {
+            LVCOLUMNW column{};
+            column.mask=LVCF_TEXT;
+            column.pszText=const_cast<LPWSTR>(candidate_headers[i]);
+            ListView_SetColumn(state.metadata_track_list,i+1,&column);
+        }
         const bool selected_valid = state.selected_track_index < state.entries.size();
         const bool physical = selected_valid &&
             state.entries[state.selected_track_index].input.physical_source_qualified &&
