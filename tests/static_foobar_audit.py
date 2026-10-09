@@ -352,11 +352,17 @@ for token in ['apply_review_grid_controls(', 'capture_review_grid_controls(',
               'ListView_GetColumnOrderArray', 'ListView_GetColumnWidth']:
     if token not in gui_test:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: review grid real HWND acceptance missing: " + token)
-for token in ('apply_review_split_geometry(', 'GetProcAddress(user32, "GetDpiForWindow")', 'state->active_dpi', 'WM_DPICHANGED'):
+for token in ('apply_native_preview_resize(', 'GetProcAddress(user32, "GetDpiForWindow")', 'state->active_dpi', 'WM_DPICHANGED',
+              'restore_batch_dialog_window_size(*state)', 'save_batch_dialog_window_size(*state)',
+              'WM_EXITSIZEMOVE', 'load_batch_preview_window_size()'):
     if token not in batch_table_dialog:
         raise SystemExit("STATIC FOOBAR AUDIT FAIL: production responsive per-monitor layout missing " + token)
-if 'apply_review_split_geometry(' not in gui_test or 'review_split_geometry(' not in gui_test:
+if 'apply_native_preview_resize(' not in gui_test or 'review_split_geometry(' not in gui_test:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: actual resized HWND geometry test absent")
+if 'WS_CLIPCHILDREN' not in resources or 'WS_CLIPSIBLINGS' not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: resize paint clipping removed")
+if 'BeginDeferWindowPos(' not in native_controls or 'DeferWindowPos(' not in native_controls:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: native atomic resize adapter missing")
 if 'for (int dpi : {96, 120, 144, 192})' not in gui_test:
     raise SystemExit("STATIC FOOBAR AUDIT FAIL: DPI runtime column checks absent")
 for token in ("IDC_METADATA_VISIBLE_WHITESPACE", "preview_whitespace_text(",
