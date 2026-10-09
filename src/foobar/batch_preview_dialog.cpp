@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include <SDK/coreDarkMode.h>
+#include <SDK/modeless_dialog.h>
 
 #include "batch_preview_dialog.h"
 #include "host_file_probe.h"
@@ -33,6 +34,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <map>
 #include <set>
@@ -58,6 +60,10 @@ struct PreviewEntry {
 
 struct PreviewState {
     HWND dialog = nullptr;
+    bool modeless_registered = false;
+    bool stale = false;
+    bool checking_snapshot = false;
+    bool refreshing = false;
     int initial_client_width = 0;
     int initial_client_height = 0;
     int active_dpi = 96;
@@ -122,6 +128,11 @@ struct PreviewState {
     // Visible ListView item index -> underlying input row identity.
     std::vector<std::size_t> view_order;
 };
+
+// Owned only by foobar's main UI thread. g_pending_state protects the rare
+// CreateDialogParamW failure before WM_INITDIALOG takes ownership.
+HWND g_workspace = nullptr;
+PreviewState* g_pending_state = nullptr;
 
 // External CUE files may appear as top-level physical handles in foobar. They
 // are not audio-file tag targets. Never trust subsong == 0 alone here.
@@ -1485,13 +1496,15 @@ void save_batch_dialog_window_size(const PreviewState& state) {
         state.initial_window_height<=0) return;
     WINDOWPLACEMENT placement{};
     placement.length=sizeof(placement);
-    if (!GetWindowPlacement(state.dialog,&placement) || IsIconic(state.dialog))
+    if (!GetWindowPlacement(state.dialog,&placement))
         return;
     // For maximized dialogs rcNormalPosition holds the restored rectangle.
     // A normal window uses its actual desktop rect for correct screen position.
     RECT bounds=placement.rcNormalPosition;
-    const bool maximized=IsZoomed(state.dialog)!=FALSE;
-    if (!maximized && !GetWindowRect(state.dialog,&bounds)) return;
+    const bool iconic=IsIconic(state.dialog)!=FALSE;
+    const bool maximized=IsZoomed(state.dialog)!=FALSE ||
+        (iconic && (placement.flags & WPF_RESTORETOMAXIMIZED) != 0);
+    if (!maximized && !iconic && !GetWindowRect(state.dialog,&bounds)) return;
     const int width=bounds.right-bounds.left;
     const int height=bounds.bottom-bounds.top;
     if (width<=0 || height<=0) return;
@@ -1837,9 +1850,137 @@ std::vector<PreviewEntry> capture_preview(
     return entries;
 }
 
+// Revalidation is synchronous and read-only. We never replace an open set of
+// field decisions merely because foobar selection, playlist or tags changed.
+void mark_stale_workspace(PreviewState& state) {
+    if (state.stale) return;
+    state.stale = true;
+    for (int id : {IDC_METADATA_ACCEPT, IDC_METADATA_REJECT,
+                   IDC_METADATA_RESET, IDC_METADATA_USE_VALUE,
+                   IDC_BATCH_APPLY_SELECTED, IDC_BATCH_APPLY_ALL,
+                   IDC_METADATA_MB_SEARCH, IDC_METADATA_MB_LOAD_RELEASE,
+                   IDC_METADATA_INSPECT_CUE, IDC_METADATA_IMPORT_CANDIDATE})
+        EnableWindow(GetDlgItem(state.dialog,id), FALSE);
+    SetWindowTextW(state.dialog,L"Music Metadata Studio - STALE snapshot (Read-only)");
+    SetDlgItemTextW(state.dialog,IDC_BATCH_HINT,
+        L"Source metadata, file identity or rules changed. Results are stale. "
+        L"Refresh snapshot to discard old decisions; no files were changed.");
+}
+
+void revalidate_workspace(PreviewState& state) {
+    if (state.stale || state.checking_snapshot || state.refreshing) return;
+    state.checking_snapshot = true;
+    bool fresh = true;
+    try {
+        verify_rules_snapshot(state.captured_rules);
+        for (const auto& entry : state.entries) {
+            verify_snapshot(entry);
+            if (entry.observed_source_guard.empty()) continue;
+            const auto latest = probe_host_file_readonly(entry.input.source_path);
+            if (latest.state != HostFileState::ExistingFile ||
+                latest.host_physical_key != entry.observed_physical_key ||
+                latest.source_guard != entry.observed_source_guard) {
+                throw std::runtime_error("A physical source changed on disk.");
+            }
+        }
+        verify_rules_snapshot(state.captured_rules);
+    } catch (...) {
+        fresh = false;
+    }
+    state.checking_snapshot = false;
+    if (!fresh) mark_stale_workspace(state);
+}
+
+bool same_workspace_selection(const PreviewState& state,
+                              const metadb_handle_list& handles) {
+    if (handles.get_count() != state.entries.size()) return false;
+    for (t_size i=0;i<handles.get_count();++i) {
+        const auto& old = state.entries[static_cast<std::size_t>(i)].handle;
+        if (std::string(old->get_path()) != std::string(handles[i]->get_path()) ||
+            old->get_subsong_index() != handles[i]->get_subsong_index())
+            return false;
+    }
+    return true;
+}
+
+void refresh_workspace_snapshot(PreviewState& state) {
+    if (MessageBoxW(state.dialog,
+            L"Rebuild the original selection from current foobar metadata?\\n\\n"
+            L"This discards every pending field decision, MusicBrainz result, "
+            L"candidate comparison and routing preview. It does not import "
+            L"a different playlist selection. No files will be changed.",
+            L"Refresh Music Metadata Studio",MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2)
+        != IDYES) return;
+    state.refreshing=true;
+    try {
+        const RoutePreviewChoice choice=read_choice(state.dialog);
+        metadb_handle_list handles;
+        for (const auto& entry: state.entries) handles.add_item(entry.handle);
+        // Build the replacement fully before touching the displayed snapshot.
+        PreviewState next;
+        next.current_choice=choice;
+        next.entries=capture_preview(handles,choice,next.analyses,next.captured_rules);
+        next.metadata_rows=djmeta::describe_metadata_diffs(next.analyses);
+        for (const auto& analysis: next.analyses)
+            next.review_decisions.emplace_back(analysis.proposals.size());
+        for (const auto& entry: next.entries) {
+            next.source_labels.push_back(entry.input.source_path);
+            next.cached_track_names.push_back(from_utf8(
+                readable_track_name(entry.input.source_path)));
+        }
+        refresh_review_summaries(next);
+        state.entries.swap(next.entries);
+        state.analyses.swap(next.analyses);
+        state.metadata_rows.swap(next.metadata_rows);
+        state.review_decisions.swap(next.review_decisions);
+        state.track_summaries.swap(next.track_summaries);
+        state.source_labels.swap(next.source_labels);
+        state.cached_track_names.swap(next.cached_track_names);
+        state.captured_rules=std::move(next.captured_rules);
+        state.current_choice=std::move(next.current_choice);
+        state.candidate_rows.clear();
+        state.candidate_view_order.clear();
+        state.musicbrainz_results.clear();
+        state.musicbrainz_detail_groups.clear();
+        state.musicbrainz_original_title.clear();
+        state.musicbrainz_original_artist.clear();
+        state.musicbrainz_live_view=false;
+        state.musicbrainz_release_loaded=false;
+        state.cue_inspection_mode=false;
+        state.cue_candidate_comparison_mode=false;
+        state.candidate_source_index=(std::numeric_limits<std::size_t>::max)();
+        state.selected_track_index=0;
+        state.focused_track_index=(std::numeric_limits<std::size_t>::max)();
+        state.track_discovery=djmeta::TrackDiscovery::All;
+        state.focused_metadata_rows.clear();
+        state.track_view_order.clear();
+        state.metadata_view_order.clear();
+        state.view_order.clear();
+        state.stale=false;
+        for (int id : {IDC_METADATA_ACCEPT, IDC_METADATA_REJECT,
+                       IDC_METADATA_RESET, IDC_METADATA_USE_VALUE,
+                       IDC_BATCH_APPLY_SELECTED, IDC_BATCH_APPLY_ALL})
+            EnableWindow(GetDlgItem(state.dialog,id), TRUE);
+        SetWindowTextW(state.dialog,L"Music Metadata Studio - Prepare Tracks (Read-only)");
+        update_table(state);
+        update_master_table(state);
+        show_preview_page(state.dialog,state,state.show_metadata,state.show_candidate);
+        SetDlgItemTextW(state.dialog,IDC_BATCH_HINT,
+            L"Snapshot refreshed. Previous candidate results and decisions discarded. "
+            L"Read-only: nothing was written.");
+    } catch (...) {
+        state.refreshing=false;
+        throw;
+    }
+    state.refreshing=false;
+}
+
 INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM lp) {
     if (message == WM_INITDIALOG) {
         auto* state = reinterpret_cast<PreviewState*>(lp);
+        g_pending_state=nullptr; // WM_NCDESTROY now owns and frees this state.
+        g_workspace=dialog;
+        state->dialog=dialog;
         SetWindowLongPtrW(dialog, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
         try {
         state->dark.AddDialogWithControls(dialog);
@@ -1855,7 +1996,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         if (!state->list || !state->metadata_list || !state->musicbrainz_details ||
             !state->musicbrainz_details_label || !state->metadata_track_list ||
             !state->metadata_filter || !state->metadata_track_filter ||
-            !state->metadata_scope || !state->tabs) return FALSE;
+            !state->metadata_scope || !state->tabs)
+            throw std::runtime_error("Required native dialog controls missing.");
         for (const wchar_t* name : {L"Metadata changes", L"File locations", L"Candidate comparison"}) {
             TCITEMW tab{};
             tab.mask = TCIF_TEXT;
@@ -1964,11 +2106,13 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         align_native_preview_form(dialog);
         capture_resize_layout(*state);
         restore_batch_dialog_window_size(*state);
+        modeless_dialog_manager::g_add(dialog);
+        state->modeless_registered=true;
         return TRUE;
-        } catch (const std::exception&) {
-            MessageBoxW(dialog, L"Unable to initialize the batch preview table.",
-                        L"Prepare Tracks", MB_OK | MB_ICONERROR);
-            EndDialog(dialog, IDCANCEL);
+        } catch (...) {
+            // WM_INITDIALOG returning FALSE does not abort creation. Always
+            // destroy to release HWND and heap state on partial initialization.
+            DestroyWindow(dialog);
             return TRUE;
         }
     }
@@ -1976,6 +2120,25 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     auto* state = reinterpret_cast<PreviewState*>(
         GetWindowLongPtrW(dialog, GWLP_USERDATA));
     if (!state) return FALSE;
+
+    if (message == WM_NCDESTROY) {
+        if (state->modeless_registered) {
+            modeless_dialog_manager::g_remove(dialog);
+            state->modeless_registered=false;
+        }
+        if (g_workspace == dialog) g_workspace=nullptr;
+        SetWindowLongPtrW(dialog,GWLP_USERDATA,0);
+        delete state;
+        return FALSE;
+    }
+    if (message == WM_CLOSE) {
+        DestroyWindow(dialog);
+        return TRUE;
+    }
+    if (message == WM_ACTIVATE && LOWORD(wp)!=WA_INACTIVE) {
+        revalidate_workspace(*state);
+        return FALSE;
+    }
 
     if (message == WM_GETMINMAXINFO && state->initial_window_width > 0) {
         auto* limits = reinterpret_cast<MINMAXINFO*>(lp);
@@ -2356,6 +2519,16 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     const int id = LOWORD(wp);
     const auto native_command = native_preview_command(message, wp);
     try {
+        if (id == IDCANCEL) {
+            DestroyWindow(dialog);
+            return TRUE;
+        }
+        if (id == IDC_BATCH_REFRESH && HIWORD(wp) == BN_CLICKED) {
+            refresh_workspace_snapshot(*state);
+            return TRUE;
+        }
+        revalidate_workspace(*state);
+        if (state->stale) return TRUE;
         if (id == IDC_METADATA_MB_SEARCH && HIWORD(wp) == BN_CLICKED) {
             if (!state->show_candidate ||
                 state->selected_track_index >= state->entries.size())
@@ -2669,10 +2842,6 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             apply_to_rows(dialog, *state, true);
             return TRUE;
         }
-        if (id == IDCANCEL) {
-            EndDialog(dialog, IDCANCEL);
-            return TRUE;
-        }
     } catch (const std::exception& error) {
         const std::wstring message_text = from_utf8(error.what());
         MessageBoxW(dialog, message_text.c_str(), L"Batch Preview",
@@ -2681,6 +2850,16 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
     }
     return FALSE;
 }
+
+class workspace_shutdown final : public initquit {
+public:
+    void on_init() override {}
+    void on_quit() override {
+        // No windows, timers or callback targets survive component shutdown.
+        if (g_workspace && IsWindow(g_workspace)) DestroyWindow(g_workspace);
+    }
+};
+initquit_factory_t<workspace_shutdown> g_workspace_shutdown;
 
 } // namespace
 
@@ -2691,35 +2870,57 @@ void show_batch_preview_dialog(
         if (handles.get_count() > static_cast<t_size>((std::numeric_limits<int>::max)()))
             throw std::runtime_error("Too many tracks for the batch preview table.");
 
-        PreviewState state;
-        state.current_choice = initial_choice;
-        state.entries = capture_preview(
-            handles, initial_choice, state.analyses, state.captured_rules);
-        state.metadata_rows = djmeta::describe_metadata_diffs(state.analyses);
-        for (const auto& analysis : state.analyses)
-            state.review_decisions.emplace_back(analysis.proposals.size());
-        refresh_review_summaries(state);
-        for (const auto& item : state.entries) {
-            state.source_labels.push_back(item.input.source_path);
-            state.cached_track_names.push_back(from_utf8(
+        if (g_workspace && IsWindow(g_workspace)) {
+            auto* existing = reinterpret_cast<PreviewState*>(
+                GetWindowLongPtrW(g_workspace,GWLP_USERDATA));
+            const bool same = existing && same_workspace_selection(*existing,handles);
+            if (IsIconic(g_workspace)) ShowWindow(g_workspace,SW_RESTORE);
+            ShowWindow(g_workspace,SW_SHOW);
+            SetForegroundWindow(g_workspace);
+            if (existing && !same) {
+                SetDlgItemTextW(g_workspace,IDC_BATCH_HINT,
+                    L"Different foobar selection: existing snapshot and decisions retained. "
+                    L"Close this workspace, then reopen for the new selection.");
+            } else if (existing) {
+                revalidate_workspace(*existing);
+            }
+            return;
+        }
+
+        auto state=std::make_unique<PreviewState>();
+        state->current_choice = initial_choice;
+        state->entries = capture_preview(
+            handles, initial_choice, state->analyses, state->captured_rules);
+        state->metadata_rows = djmeta::describe_metadata_diffs(state->analyses);
+        for (const auto& analysis : state->analyses)
+            state->review_decisions.emplace_back(analysis.proposals.size());
+        refresh_review_summaries(*state);
+        for (const auto& item : state->entries) {
+            state->source_labels.push_back(item.input.source_path);
+            state->cached_track_names.push_back(from_utf8(
                 readable_track_name(item.input.source_path)));
         }
-        update_table(state);
-        update_metadata_table(state);
-
         INITCOMMONCONTROLSEX controls = {};
         controls.dwSize = sizeof(controls);
-        controls.dwICC = ICC_LISTVIEW_CLASSES;
+        controls.dwICC = ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES;
         if (!InitCommonControlsEx(&controls))
             throw std::runtime_error("Unable to initialize the native list view.");
 
-        const INT_PTR result = DialogBoxParamW(
-            core_api::get_my_instance(),
-            MAKEINTRESOURCEW(IDD_BATCH_PREVIEW),
-            core_api::get_main_window(), batch_dialog_proc,
-            reinterpret_cast<LPARAM>(&state));
-        if (result == -1)
-            throw std::runtime_error("Unable to open the batch preview dialog.");
+        // A standalone top-level HWND has its own taskbar/Alt-Tab entry and
+        // does not stay forcibly above the foobar window as an owned popup.
+        g_pending_state=state.release();
+        HWND created=CreateDialogParamW(
+            core_api::get_my_instance(),MAKEINTRESOURCEW(IDD_BATCH_PREVIEW),
+            nullptr,batch_dialog_proc,reinterpret_cast<LPARAM>(g_pending_state));
+        if (!created) {
+            if (g_pending_state) {
+                delete g_pending_state;
+                g_pending_state=nullptr;
+            }
+            throw std::runtime_error("Unable to create the modeless workspace.");
+        }
+        ShowWindow(created,IsZoomed(created)?SW_SHOWMAXIMIZED:SW_SHOW);
+        UpdateWindow(created);
     } catch (const std::exception& error) {
         std::string message =
             "Unable to prepare the read-only batch preview. Nothing was changed.\n\n";
