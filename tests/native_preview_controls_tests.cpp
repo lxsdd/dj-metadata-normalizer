@@ -126,6 +126,39 @@ int main() {
     check((detail_style & LVS_REPORT)==LVS_REPORT &&
           (detail_style & LVS_OWNERDATA)==0,
           "selected candidate details have normal independent native ListView rows");
+    for (int i=0;i<4;++i) {
+        LVCOLUMNW column{};
+        column.mask=LVCF_TEXT|LVCF_WIDTH;
+        column.cx=100;
+        std::wstring title=(i==0?L"Field":i==1?L"Original":i==2?L"Suggested":L"Status");
+        column.pszText=title.data();
+        check(ListView_InsertColumn(online_details,i,&column)==i,
+              "production online detail column created");
+    }
+    check(djmeta_foobar::insert_native_preview_detail_row(online_details,0,
+        L"ARTIST",L"(missing)",L"Daft Punk",L"Review"),
+        "native online detail renderer writes all subitems");
+    wchar_t detail_value[128]{};
+    const wchar_t* expected[]={L"ARTIST",L"(missing)",L"Daft Punk",L"Review"};
+    for(int i=0;i<4;++i) {
+        detail_value[0]=0;
+        ListView_GetItemText(online_details,0,i,detail_value,128);
+        check(std::wcscmp(detail_value,expected[i])==0,
+              "actual native control preserves each of the four online detail cells");
+    }
+    ListView_DeleteAllItems(online_details);
+    check(djmeta_foobar::may_activate_musicbrainz_release(
+        LVN_ITEMACTIVATE,true,true,false,true),
+        "double-click or Enter can load a verified MusicBrainz release");
+    check(!djmeta_foobar::may_activate_musicbrainz_release(
+        LVN_ITEMACTIVATE,true,false,false,true) &&
+          !djmeta_foobar::may_activate_musicbrainz_release(
+        LVN_ITEMACTIVATE,true,true,true,true) &&
+          !djmeta_foobar::may_activate_musicbrainz_release(
+        LVN_ITEMACTIVATE,true,true,false,false) &&
+          !djmeta_foobar::may_activate_musicbrainz_release(
+        NM_DBLCLK,true,true,false,true),
+        "release activation refuses recording, loaded, stale and duplicate events");
     HWND cue_inspect = GetDlgItem(dialog, IDC_METADATA_INSPECT_CUE);
     check(cue_inspect != nullptr,
           "production read-only CUE inspect button exists in real dialog resource");
@@ -531,6 +564,26 @@ int main() {
     }
 
     djmeta_foobar::align_native_preview_form(dialog);
+    RECT aligned_query{}, aligned_search{}, aligned_review_button{};
+    COMBOBOXINFO scope_info{};
+    scope_info.cbSize=sizeof(scope_info);
+    check(GetWindowRect(mb_query,&aligned_query)!=FALSE &&
+          GetWindowRect(mb_search,&aligned_search)!=FALSE &&
+          GetWindowRect(GetDlgItem(dialog,IDC_METADATA_ACCEPT),
+                        &aligned_review_button)!=FALSE &&
+          GetComboBoxInfo(GetDlgItem(dialog,IDC_METADATA_REVIEW_SCOPE),
+                          &scope_info)!=FALSE,
+          "actual production toolbar and scope input rectangles readable");
+    const auto center=[](const RECT& r){return (r.top+r.bottom)/2;};
+    check(center(aligned_query)==center(aligned_search)+2,
+          "search edit text is optically aligned two pixels below themed button frame");
+    check(center(scope_info.rcItem)==center(aligned_review_button),
+          "Select changes combo item aligns with Accept action baseline");
+    djmeta_foobar::align_native_preview_form(dialog);
+    RECT repeated{};
+    GetWindowRect(mb_query,&repeated);
+    check(repeated.top==aligned_query.top,
+          "repeated layout pass does not accumulate input alignment offset");
     const int rows[][2] = {
         {IDC_METADATA_FILTER_LABEL, IDC_METADATA_FILTER},
         {IDC_METADATA_TRACK_FILTER_LABEL, IDC_METADATA_TRACK_FILTER},
