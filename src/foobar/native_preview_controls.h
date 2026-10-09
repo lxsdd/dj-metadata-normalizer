@@ -243,7 +243,14 @@ inline bool align_label_to_input(HWND dialog, int label_id, int input_id) {
     // field's actual screen rectangle, not the expanded list rectangle.
     COMBOBOXINFO combo{};
     combo.cbSize = sizeof(combo);
-    if (GetComboBoxInfo(input, &combo)) input_rect = combo.rcItem;
+    if (GetComboBoxInfo(input, &combo)) {
+        // COMBOBOXINFO.rcItem is LOCAL to the combo itself, not a desktop
+        // rectangle! The previous code compared y=3..20 with a screen
+        // y≈700 action, shifting label/control disastrously on a moved dialog.
+        input_rect=combo.rcItem;
+        MapWindowPoints(input,HWND_DESKTOP,
+                        reinterpret_cast<POINT*>(&input_rect),2);
+    }
 
     MapWindowPoints(HWND_DESKTOP, dialog,
                     reinterpret_cast<POINT*>(&label_rect), 2);
@@ -283,6 +290,9 @@ inline bool align_native_action_row(HWND dialog, int input_id,
         info.cbSize=sizeof(info);
         if (!GetComboBoxInfo(input,&info)) return false;
         input_rect=info.rcItem;
+        // Local combo edit item to desktop, THEN compare with GetWindowRect.
+        MapWindowPoints(input,HWND_DESKTOP,
+                        reinterpret_cast<POINT*>(&input_rect),2);
     }
     const int actual_middle=input_rect.top+(input_rect.bottom-input_rect.top)/2;
     const int button_middle=button_rect.top+(button_rect.bottom-button_rect.top)/2;
