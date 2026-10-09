@@ -133,6 +133,9 @@ layout_storage = (foobar / "batch_table_settings.cpp").read_text(encoding="utf-8
 route_preview = (foobar / "routing_preview.cpp").read_text(encoding="utf-8")
 legacy_profiles = (foobar / "legacy_routing_profiles.h").read_text(encoding="utf-8")
 resources = (foobar / "component.rc").read_text(encoding="utf-8")
+if "WS_MAXIMIZEBOX" not in resources:
+    raise SystemExit("STATIC FOOBAR AUDIT FAIL: native batch dialog lost maximizer")
+
 
 for label, source, token in [
     ("default Singles caption", menu_settings, "Prepare: Singles (Preview)"),
@@ -243,7 +246,7 @@ for label, token in (
     ("MusicBrainz separate field details", "refresh_musicbrainz_detail_rows(state)"),
     ("MusicBrainz stable candidate id", "state->candidate_rows[rowid].candidate.source_id"),
     ("position/mode restored", "load_batch_preview_window_placement()"),
-    ("native maximize", "WS_MAXIMIZEBOX"),
+
 
     ("user clicked official MusicBrainz search", "id == IDC_METADATA_MB_SEARCH && HIWORD(wp) == BN_CLICKED"),
     ("official lookup is separate user action", "id == IDC_METADATA_MB_LOAD_RELEASE && HIWORD(wp)==BN_CLICKED"),
