@@ -8,6 +8,7 @@ add_library(djmeta_core STATIC
     src/core/write_guard.cpp
     src/core/physical_selection.cpp
     src/core/external_cue.cpp
+    src/core/cue_metadata.cpp
     src/core/cue_association.cpp
     src/core/staging.cpp
     src/core/routing_overrides.cpp
@@ -267,7 +268,18 @@ else()
     target_compile_options(djmeta_online_intake_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Identical read-only semantic inventory for external and embedded text CUE.
+add_executable(djmeta_cue_metadata_tests tests/cue_metadata_tests.cpp)
+target_link_libraries(djmeta_cue_metadata_tests PRIVATE djmeta_core)
+target_compile_features(djmeta_cue_metadata_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_cue_metadata_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_cue_metadata_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_cue_metadata_tests COMMAND djmeta_cue_metadata_tests)
 add_test(NAME djmeta_online_intake_tests COMMAND djmeta_online_intake_tests)
 add_test(NAME djmeta_online_fields_tests COMMAND djmeta_online_fields_tests)
 add_test(NAME djmeta_online_release_tests COMMAND djmeta_online_release_tests)
