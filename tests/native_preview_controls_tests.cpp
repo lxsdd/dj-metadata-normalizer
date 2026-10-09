@@ -104,6 +104,21 @@ int main() {
     check(std::wcscmp(value, L"My DJ profile") == 0,
           "custom profile text survives in the actual control");
 
+    HWND candidate_import = GetDlgItem(dialog, IDC_METADATA_IMPORT_CANDIDATE);
+    check(candidate_import != nullptr,
+          "production candidate comparison clipboard import button exists");
+    RECT candidate_rect{};
+    RECT client_rect{};
+    check(GetWindowRect(candidate_import, &candidate_rect) != FALSE &&
+          GetClientRect(dialog, &client_rect) != FALSE,
+          "candidate import button geometry readable");
+    MapWindowPoints(HWND_DESKTOP, dialog,
+                    reinterpret_cast<POINT*>(&candidate_rect), 2);
+    check(candidate_rect.left >= 0 &&
+          candidate_rect.right <= client_rect.right &&
+          candidate_rect.top >= 0 && candidate_rect.bottom <= client_rect.bottom,
+          "candidate import button fits minimum dialog size");
+
     HWND review_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
     HWND manual = GetDlgItem(dialog, IDC_METADATA_MANUAL_INPUT);
     check(review_scope && manual &&
