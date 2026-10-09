@@ -727,7 +727,6 @@ void layout_musicbrainz_detail_pane(PreviewState& state) {
         client.bottom-state.initial_client_height);
     const auto frame=split.detail;
     const int width=frame.right-frame.left;
-    const int height=frame.bottom-frame.top;
     const bool active=state.show_candidate && state.musicbrainz_live_view &&
         state.candidate_source_index==state.selected_track_index;
     if (!active) {
@@ -741,24 +740,20 @@ void layout_musicbrainz_detail_pane(PreviewState& state) {
     // Reserve a real caption line and vertical breathing room between the
     // browser and the nested table. The old +2/+17 geometry was overlapping
     // native ListView borders/fonts (visible at 100%-200% scaling).
-    const int detail_height=(std::clamp)(height/3,98,210);
-    const int caption_gap=(std::max)(26,MulDiv(29,state.active_dpi,96));
-    const int top_height=(std::max)(70,height-detail_height-caption_gap);
+    const auto regions=musicbrainz_pane_bounds(frame,state.active_dpi);
+    const auto place=[&](HDWP& hdwp,HWND window,const RECT& bounds) {
+        hdwp=DeferWindowPos(hdwp,window,nullptr,
+            bounds.left,bounds.top,
+            (std::max)(8,bounds.right-bounds.left),
+            (std::max)(8,bounds.bottom-bounds.top),
+            SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
+        return hdwp!=nullptr;
+    };
     HDWP defer=BeginDeferWindowPos(3);
     if (!defer) return;
-    defer=DeferWindowPos(defer,state.metadata_list,nullptr,
-        frame.left,frame.top,width,top_height,
-        SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
-    if (!defer) return;
-    defer=DeferWindowPos(defer,state.musicbrainz_details_label,nullptr,
-        frame.left,frame.top+top_height+5,width,18,
-        SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
-    if (!defer) return;
-    defer=DeferWindowPos(defer,state.musicbrainz_details,nullptr,
-        frame.left,frame.top+top_height+caption_gap,width,
-        (std::max)(35,height-top_height-caption_gap),
-        SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
-    if (!defer) return;
+    if (!place(defer,state.metadata_list,regions.hits)) return;
+    if (!place(defer,state.musicbrainz_details_label,regions.caption)) return;
+    if (!place(defer,state.musicbrainz_details,regions.details)) return;
     EndDeferWindowPos(defer);
     ShowWindow(state.musicbrainz_details_label,SW_SHOW);
     ShowWindow(state.musicbrainz_details,SW_SHOW);
