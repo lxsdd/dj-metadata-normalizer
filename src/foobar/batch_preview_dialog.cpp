@@ -1867,15 +1867,20 @@ void mark_stale_workspace(PreviewState& state) {
         L"Refresh snapshot to discard old decisions; no files were changed.");
 }
 
-void revalidate_workspace(PreviewState& state) {
+void revalidate_workspace(PreviewState& state, bool full_source_check = false) {
     if (state.stale || state.checking_snapshot || state.refreshing) return;
     state.checking_snapshot = true;
     bool fresh = true;
     try {
         verify_rules_snapshot(state.captured_rules);
-        for (const auto& entry : state.entries) {
+        for (std::size_t i = 0; i < state.entries.size(); ++i) {
+            const auto& entry = state.entries[i];
             verify_snapshot(entry);
-            if (entry.observed_source_guard.empty()) continue;
+            // Focus/restore checks the selected disk source; explicit actions
+            // verify the entire batch. Avoid a multi-thousand-file OS scan
+            // merely because foobar playback or playlist focus changed.
+            if ((!full_source_check && i != state.selected_track_index) ||
+                entry.observed_source_guard.empty()) continue;
             const auto latest = probe_host_file_readonly(entry.input.source_path);
             if (latest.state != HostFileState::ExistingFile ||
                 latest.host_physical_key != entry.observed_physical_key ||
@@ -2473,6 +2478,8 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         // UI layout is independent of preview Cancel/Close. Save only display
         // preferences, never route edits, media metadata or file operations.
         try {
+            if (state->initial_client_width <= 0 || !state->metadata_track_list ||
+                !state->metadata_list || !state->list) return FALSE;
             capture_column_layout(*state);
             store_batch_table_layout(state->layout);
             capture_review_grid_controls(state->metadata_track_list, state->track_grid,
@@ -2527,8 +2534,18 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
             refresh_workspace_snapshot(*state);
             return TRUE;
         }
-        revalidate_workspace(*state);
-        if (state->stale) return TRUE;
+        const bool consequential = native_command == PreviewCommand::Accept ||
+            native_command == PreviewCommand::Reject ||
+            native_command == PreviewCommand::Reset ||
+            native_command == PreviewCommand::ManualValue ||
+            (HIWORD(wp) == BN_CLICKED &&
+             (id == IDC_METADATA_MB_SEARCH || id == IDC_METADATA_MB_LOAD_RELEASE ||
+              id == IDC_METADATA_INSPECT_CUE || id == IDC_METADATA_IMPORT_CANDIDATE ||
+              id == IDC_BATCH_APPLY_SELECTED || id == IDC_BATCH_APPLY_ALL));
+        if (consequential) {
+            revalidate_workspace(*state, true);
+            if (state->stale) return TRUE;
+        }
         if (id == IDC_METADATA_MB_SEARCH && HIWORD(wp) == BN_CLICKED) {
             if (!state->show_candidate ||
                 state->selected_track_index >= state->entries.size())
