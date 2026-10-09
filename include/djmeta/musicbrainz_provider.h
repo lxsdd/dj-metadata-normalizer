@@ -332,7 +332,7 @@ inline SearchResult parse_search(std::string_view json, SearchKind kind) {
         const auto length=number_or(raw.get("length"));
         if (length>=0 && length<=10LL*60*60*1000) row.duration_ms=length;
         const auto score=number_or(raw.get("score"),0);
-        row.search_score=static_cast<int>((std::clamp)(score,0LL,100LL));
+        row.search_score=static_cast<int>((std::clamp<std::int64_t>)(score,0,100));
         if (!valid_mbid(row.mbid) ||
             row.title.empty() || row.artist.empty() ||
             row.title.size()>1024 || row.artist.size()>512) continue;
