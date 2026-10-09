@@ -555,7 +555,7 @@ std::wstring track_master_cell(PreviewState& state, std::size_t row, int col) {
         const auto& rows = state.candidate_rows;
         if (col == 1) return std::to_wstring(rows.size());
         if (state.musicbrainz_live_view) {
-            if (col == 2) return L"—"; // browser hits aren't per-field diffs
+            if (col == 3) return L""; // no meaningless third online summary
             return std::to_wstring(static_cast<std::size_t>(std::count_if(
                 rows.begin(),rows.end(),[](const auto& item) {
                     return item.state==djmeta::online::FieldReviewState::Blocked;
@@ -835,14 +835,29 @@ void update_metadata_table(PreviewState& state) {
         // Update headers when entering live search, not just on tab switch.
         const wchar_t* candidate_headers[3]={
             state.musicbrainz_live_view?L"Hits":L"Tags",
-            state.musicbrainz_live_view?L"—":L"Diffs",
-            state.musicbrainz_live_view?L"Unmatched":L"Block"
+            state.musicbrainz_live_view?L"Blocked":L"Diffs",
+            state.musicbrainz_live_view?L"":L"Block"
         };
         for (int i=0;i<3;++i) {
             LVCOLUMNW column{};
             column.mask=LVCF_TEXT;
             column.pszText=const_cast<LPWSTR>(candidate_headers[i]);
             ListView_SetColumn(state.metadata_track_list,i+1,&column);
+        }
+        if (state.musicbrainz_live_view) {
+            // One local source, number of online hits, blocked identities.
+            // The old fourth narrow column truncated "Unmatched" to
+            // "Unma..." even with ample space in the maximized window.
+            ListView_SetColumnWidth(state.metadata_track_list,0,
+                (std::max)(138,MulDiv(180,state.active_dpi,96)));
+            ListView_SetColumnWidth(state.metadata_track_list,1,
+                (std::max)(50,MulDiv(60,state.active_dpi,96)));
+            ListView_SetColumnWidth(state.metadata_track_list,2,
+                (std::max)(80,MulDiv(92,state.active_dpi,96)));
+            ListView_SetColumnWidth(state.metadata_track_list,3,0);
+        } else {
+            apply_review_grid_controls(state.metadata_track_list,state.track_grid,
+                                       state.active_dpi);
         }
         const bool selected_valid = state.selected_track_index < state.entries.size();
         const bool physical = selected_valid &&
@@ -1086,8 +1101,8 @@ void show_preview_page(HWND dialog, PreviewState& state,
     }
     const wchar_t* track_headers[3] = {
         candidate ? (state.musicbrainz_live_view?L"Hits":L"Tags") : L"Music",
-        candidate ? (state.musicbrainz_live_view?L"—":L"Diffs") : L"Other",
-        candidate ? (state.musicbrainz_live_view?L"Unmatched":L"Block") : L"Review"
+        candidate ? (state.musicbrainz_live_view?L"Blocked":L"Diffs") : L"Other",
+        candidate ? (state.musicbrainz_live_view?L"":L"Block") : L"Review"
     };
     for (int i = 0; i < 3; ++i) {
         LVCOLUMNW col{};
@@ -2319,8 +2334,9 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         if (new_dpi >= 96 && new_dpi <= 768 && state->active_dpi != new_dpi) {
             // Capture at the *previous* DPI before applying a new scale.
             // Preserve hidden logical widths and current user resizing.
-            capture_review_grid_controls(state->metadata_track_list,
-                                         state->track_grid, state->active_dpi);
+            if (!state->musicbrainz_live_view)
+                capture_review_grid_controls(state->metadata_track_list,
+                                             state->track_grid, state->active_dpi);
             if (!state->musicbrainz_browse_columns_active)
                 capture_review_grid_controls(state->metadata_list,
                                              state->detail_grid, state->active_dpi);
