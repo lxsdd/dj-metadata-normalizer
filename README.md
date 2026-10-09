@@ -1,4 +1,4 @@
-# DJ Metadata Normalizer
+# Music Metadata Studio
 
 Shared, deterministic metadata-normalization engine for foobar2000 and DJ Library.
 

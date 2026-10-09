@@ -1651,7 +1651,7 @@ void show_batch_preview_dialog(
         std::string message =
             "Unable to prepare the read-only batch preview. Nothing was changed.\n\n";
         message += error.what();
-        popup_message::g_show(message.c_str(), "DJ Metadata Normalizer");
+        popup_message::g_show(message.c_str(), "Music Metadata Studio");
     }
 }
 
