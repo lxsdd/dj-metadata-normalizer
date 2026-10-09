@@ -430,7 +430,7 @@ std::wstring candidate_cell_text(const djmeta::online::FieldReviewRow& item,
     case 0: return from_utf8(item.field);
     case 1: return show_field_values(item.original_values);
     case 2: return show_field_values(item.candidate.values);
-    case 3: return from_utf8(item.candidate.provider);
+    case 3: return L"Pasted: " + from_utf8(item.candidate.provider);
     case 4:
         return item.state == djmeta::online::FieldReviewState::Unchanged
             ? L"No change" :
@@ -517,13 +517,13 @@ void update_metadata_table(PreviewState& state) {
               L"@cue_track_ordinal=N for an exact CUE track. No tags were written."
             : state.cue_candidate_comparison_mode &&
               state.candidate_source_index == state.selected_track_index
-            ? L"CUE comparison only (album / exact track scope). Review/Blocked are "
-              L"not write approvals. No CUE or audio file was changed."
+            ? L"Manual clipboard evidence (provider unverified). CUE album / track comparison "
+              L"only; Review/Blocked are not write approvals. No files were changed."
             : !physical
             ? L"Select Inspect CUE first, then Import clipboard to compare source "
               L"metadata. Direct virtual-subtrack writes remain blocked."
             : !state.candidate_view_order.empty()
-            ? L"Candidate loaded for the selected track. No change / Review / Blocked are "
+            ? L"Pasted evidence (provider unverified). No change / Review / Blocked are "
               L"comparison statuses, not write approvals. No tags were written."
             : L"Copy a structured candidate and click Import clipboard. Required: "
               L"@provider=discogs, @id=release:123 and FIELD=VALUE. No tags are written.";
@@ -1597,8 +1597,14 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                         const auto idx = state->candidate_view_order[row];
                         if (idx < state->candidate_rows.size()) {
                             const auto& item = state->candidate_rows[idx];
+                            const bool is_cue_inventory =
+                                item.reason == "cue_inventory_read_only" ||
+                                item.reason == "cue_inventory_unqualified";
                             const std::wstring label =
-                                L"Source: " + from_utf8(item.candidate.provider) +
+                                (is_cue_inventory
+                                    ? L"Source: actual local CUE carrier"
+                                    : L"Source: manual paste, provider unverified") +
+                                L"\nDeclared provider: " + from_utf8(item.candidate.provider) +
                                 L"\nSource ID: " + from_utf8(item.candidate.source_id) +
                                 L"\nField: " + from_utf8(item.field) +
                                 L"\nReason: " + from_utf8(item.reason) +
