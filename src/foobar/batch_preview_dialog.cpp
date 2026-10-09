@@ -1161,58 +1161,79 @@ void resize_batch_dialog(PreviewState& state, int width, int height) {
 }
 
 void restore_batch_dialog_window_size(PreviewState& state) {
-    const auto saved = load_batch_preview_window_size();
-    if (!saved || !state.dialog || state.initial_window_width <= 0) return;
+    if (!state.dialog || state.initial_window_width <= 0) return;
     const int dpi = (std::max)(96, state.active_dpi);
-    int target_width = MulDiv(saved->width_at_96_dpi, dpi, 96);
-    int target_height = MulDiv(saved->height_at_96_dpi, dpi, 96);
-    RECT original{};
-    if (!GetWindowRect(state.dialog, &original)) return;
+    const auto saved_placement=load_batch_preview_window_placement();
+    const auto saved_size=load_batch_preview_window_size();
+    if (!saved_placement && !saved_size) return;
+
+    const int target_width = saved_placement
+        ? MulDiv(saved_placement->width_at_96_dpi,dpi,96)
+        : MulDiv(saved_size->width_at_96_dpi,dpi,96);
+    const int target_height = saved_placement
+        ? MulDiv(saved_placement->height_at_96_dpi,dpi,96)
+        : MulDiv(saved_size->height_at_96_dpi,dpi,96);
+    RECT proposed{};
+    if (!GetWindowRect(state.dialog,&proposed)) return;
+    int left=saved_placement
+        ? MulDiv(saved_placement->left_at_96_dpi,dpi,96) : proposed.left;
+    int top=saved_placement
+        ? MulDiv(saved_placement->top_at_96_dpi,dpi,96) : proposed.top;
+
+    RECT search_rect{left,top,left+target_width,top+target_height};
+    HMONITOR monitor=MonitorFromRect(&search_rect,MONITOR_DEFAULTTONEAREST);
     MONITORINFO screen{};
-    screen.cbSize = sizeof(screen);
-    const HMONITOR monitor = MonitorFromWindow(state.dialog, MONITOR_DEFAULTTONEAREST);
-    if (!monitor || !GetMonitorInfoW(monitor, &screen)) return;
-    const int available_w = screen.rcWork.right - screen.rcWork.left;
-    const int available_h = screen.rcWork.bottom - screen.rcWork.top;
-    if (available_w < state.initial_window_width ||
-        available_h < state.initial_window_height) return;
-    target_width = (std::clamp)(target_width,
-        state.initial_window_width, available_w);
-    target_height = (std::clamp)(target_height,
-        state.initial_window_height, available_h);
-    const int left = (std::clamp)(original.left, screen.rcWork.left,
-                                screen.rcWork.right - target_width);
-    const int top = (std::clamp)(original.top, screen.rcWork.top,
-                               screen.rcWork.bottom - target_height);
-    // Layout baseline was captured from the unchanged resource template.
-    // SetWindowPos triggers the same WM_SIZE path as an ordinary resize.
-    SetWindowPos(state.dialog, nullptr, left, top, target_width, target_height,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
+    screen.cbSize=sizeof(screen);
+    if (!monitor || !GetMonitorInfoW(monitor,&screen)) return;
+    const int available_w=screen.rcWork.right-screen.rcWork.left;
+    const int available_h=screen.rcWork.bottom-screen.rcWork.top;
+    if (available_w<state.initial_window_width ||
+        available_h<state.initial_window_height) return;
+    const int width=(std::clamp)(target_width,state.initial_window_width,available_w);
+    const int height=(std::clamp)(target_height,state.initial_window_height,available_h);
+    left=(std::clamp)(left,screen.rcWork.left,screen.rcWork.right-width);
+    top=(std::clamp)(top,screen.rcWork.top,screen.rcWork.bottom-height);
+    // Saved position is the user's last normal (restored) window location.
+    // Clamp after monitor/DPI changes to ensure the caption always stays visible.
+    SetWindowPos(state.dialog,nullptr,left,top,width,height,
+                 SWP_NOZORDER|SWP_NOACTIVATE);
+    if (saved_placement && saved_placement->maximized)
+        ShowWindow(state.dialog,SW_MAXIMIZE);
 }
 
 void save_batch_dialog_window_size(const PreviewState& state) {
-    if (!state.dialog || state.initial_window_width <= 0 ||
-        state.initial_window_height <= 0) return;
+    if (!state.dialog || state.initial_window_width<=0 ||
+        state.initial_window_height<=0) return;
     WINDOWPLACEMENT placement{};
-    placement.length = sizeof(placement);
-    if (!GetWindowPlacement(state.dialog, &placement) ||
-        IsIconic(state.dialog)) return;
-    // If the window was maximized, remember its normal dimensions rather
-    // than a monitor-sized maximized rectangle.
-    const RECT bounds = placement.rcNormalPosition;
-    const int width = bounds.right - bounds.left;
-    const int height = bounds.bottom - bounds.top;
-    if (width <= 0 || height <= 0) return;
-    const int dpi = (std::max)(96, state.active_dpi);
-    djmeta::PreviewWindowSize logical{
-        MulDiv(width, 96, dpi), MulDiv(height, 96, dpi)};
-    if (!djmeta::valid_preview_window_size(logical)) return;
-    // Do not introduce a foobar cfg write just because the unchanged default
-    // window was opened and closed for a read-only metadata preview.
-    if (!load_batch_preview_window_size() &&
-        width == state.initial_window_width &&
-        height == state.initial_window_height) return;
-    store_batch_preview_window_size(logical);
+    placement.length=sizeof(placement);
+    if (!GetWindowPlacement(state.dialog,&placement) || IsIconic(state.dialog))
+        return;
+    // For maximized dialogs rcNormalPosition holds the restored rectangle.
+    // A normal window uses its actual desktop rect for correct screen position.
+    RECT bounds=placement.rcNormalPosition;
+    const bool maximized=IsZoomed(state.dialog)!=FALSE;
+    if (!maximized && !GetWindowRect(state.dialog,&bounds)) return;
+    const int width=bounds.right-bounds.left;
+    const int height=bounds.bottom-bounds.top;
+    if (width<=0 || height<=0) return;
+    const int dpi=(std::max)(96,state.active_dpi);
+    djmeta::PreviewWindowPlacement saved{
+        MulDiv(bounds.left,96,dpi), MulDiv(bounds.top,96,dpi),
+        MulDiv(width,96,dpi), MulDiv(height,96,dpi), maximized};
+    if (!djmeta::valid_preview_window_placement(saved)) return;
+    if (!load_batch_preview_window_placement() && !maximized) {
+        // Keep untouched defaults out of foobar cfg when the dialog never
+        // moved or resized. Existing legacy size preference is preserved.
+        RECT original{};
+        if (GetWindowRect(state.dialog,&original) &&
+            width==state.initial_window_width &&
+            height==state.initial_window_height &&
+            !load_batch_preview_window_size()) {
+            // A default-sized dialog may still have been moved; persist
+            // coordinates in all cases so position is not silently discarded.
+        }
+    }
+    store_batch_preview_window_placement(saved);
 }
 
 void apply_review_action(HWND dialog, PreviewState& state,
