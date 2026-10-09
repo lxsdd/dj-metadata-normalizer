@@ -7,6 +7,10 @@
 namespace djmeta_foobar {
 namespace {
 
+constexpr GUID kBatchPreviewWindowSizeGuid =
+    {0x03bf8a72, 0xe38f, 0x4a86, {0x8f, 0xab, 0xda, 0x56, 0x13, 0xbc, 0x87, 0x39}};
+cfg_string g_batch_preview_window_size(kBatchPreviewWindowSizeGuid, "");
+
 constexpr GUID kBatchTableLayoutGuid =
     {0xbca40f8b, 0x927b, 0x4fe6, {0xa1, 0x75, 0x16, 0x09, 0x63, 0xd1, 0x47, 0x21}};
 
@@ -26,6 +30,20 @@ cfg_string g_detail_grid_layout(kDetailGridGuid,
     "v1|0,1,2,3,4|80,105,105,60,75|31|0|0");
 
 } // namespace
+
+std::optional<djmeta::PreviewWindowSize> load_batch_preview_window_size() {
+    const auto stored = g_batch_preview_window_size.get();
+    return djmeta::parse_preview_window_size(stored.c_str());
+}
+
+void store_batch_preview_window_size(djmeta::PreviewWindowSize size) {
+    const auto serialized = djmeta::serialize_preview_window_size(size);
+    if (serialized.empty())
+        throw std::invalid_argument("Invalid batch preview window size.");
+    const auto before = g_batch_preview_window_size.get();
+    if (std::string_view(before.c_str()) != serialized)
+        g_batch_preview_window_size.set(serialized.c_str());
+}
 
 djmeta::BatchTableLayout load_batch_table_layout() {
     const auto persisted = g_batch_table_layout.get();
