@@ -339,6 +339,150 @@ std::string readable_track_name(const std::string& path) {
     return split == std::string::npos ? displayed : displayed.substr(split+1);
 }
 
+// No MusicBrainz request may contain a local path, file hash or audio bytes.
+// These values come solely from explicitly selected metadata or the text the
+// user typed in the short native search field. Duplicates are ambiguous.
+std::string unique_metadata_value(const djmeta::MetadataDocument& doc,
+                                  std::string_view wanted) {
+    std::string result;
+    std::size_t matches=0;
+    for (const auto& field:doc.fields)
+        if (djmeta::ascii_upper_field(field.name)==wanted) {
+            matches += field.values.size();
+            if (field.values.size()==1) result=field.values[0];
+        }
+    if (matches>1)
+        throw std::invalid_argument("Ambiguous local title or artist field.");
+    return result;
+}
+
+std::string unique_cue_album_value(const djmeta::CueMetadataInventory& cue,
+                                   std::string_view name) {
+    std::string value;
+    std::size_t count=0;
+    for (const auto& field:cue.globals)
+        if (field.name==name) {
+            value=field.value;
+            ++count;
+        }
+    if (count>1)
+        throw std::invalid_argument("Ambiguous CUE album title or artist.");
+    return value;
+}
+
+std::vector<djmeta::online::FieldReviewRow> musicbrainz_search_rows(
+    const djmeta::online::musicbrainz::SearchResult& found,
+    const std::string& local_title, const std::string& local_artist) {
+    using namespace djmeta::online;
+    std::vector<FieldReviewRow> rows;
+    std::size_t ordinal=0;
+    for (const auto& hit:found.candidates) {
+        ++ordinal;
+        const std::string prefix=
+            std::string(hit.kind==musicbrainz::SearchKind::Release ?
+                        "Release " : "Recording ") + std::to_string(ordinal) + " / ";
+        const std::string reason=
+            "musicbrainz_live_search_rank_"+std::to_string(hit.search_score)+
+            "_not_write_confidence";
+        const auto add=[&](const std::string& field,
+                           const std::string& original,
+                           const std::string& proposed) {
+            if (proposed.empty()) return;
+            FieldReviewRow row;
+            row.field=prefix+field;
+            if (!original.empty()) row.original_values={original};
+            row.candidate.field=field;
+            row.candidate.provider="musicbrainz";
+            row.candidate.source_id=hit.mbid; // verified response UUID.
+            row.candidate.scope=hit.kind==musicbrainz::SearchKind::Release
+                ? EvidenceScope::Edition : EvidenceScope::Recording;
+            row.candidate.values={proposed};
+            row.state=(!original.empty() &&
+                       comparable(original)==comparable(proposed))
+                ? FieldReviewState::Unchanged : FieldReviewState::NeedsReview;
+            row.reason=reason;
+            rows.push_back(std::move(row));
+        };
+        add("TITLE",local_title,hit.title);
+        add("ARTIST",local_artist,hit.artist);
+        if (hit.kind==musicbrainz::SearchKind::Release)
+            add("EDITION DATE","",hit.release_date);
+    }
+    return rows;
+}
+
+// Only a selected, verified MusicBrainz release MBID is allowed to feed this
+// advisory tracklist comparison. The Hungarian assignment never writes CUE.
+std::vector<djmeta::online::FieldReviewRow> musicbrainz_cue_release_rows(
+    const djmeta::CueMetadataInventory& cue,
+    const djmeta::online::ReleaseEdition& edition) {
+    using namespace djmeta::online;
+    if (cue.status != djmeta::CueSyntaxStatus::Parsed)
+        throw std::invalid_argument("Unqualified CUE cannot be matched to a release.");
+    std::vector<FieldReviewRow> output;
+    const auto review_to_row=[&](const CueCandidateFieldReview& input,
+                                 const std::string& prefix) {
+        FieldReviewRow row;
+        row.field=prefix+(input.cue_field.empty()
+            ? input.candidate.field : input.cue_field);
+        row.candidate=input.candidate;
+        row.original_values=input.original_values;
+        row.state=input.state;
+        row.reason="musicbrainz_live_release_"+input.reason+
+            (input.original_inherited?"_inherited":"");
+        return row;
+    };
+    for (const auto& field:edition.fields) {
+        const auto reviewed=review_cue_candidate_fields(cue,std::nullopt,{field});
+        for(const auto& item:reviewed)
+            output.push_back(review_to_row(item,"Album / "));
+    }
+    const auto local=prepare_cue_release_lookup(cue);
+    ReleaseAlignment alignment;
+    if (local.eligible)
+        alignment=align_release(local.tracks,edition);
+    // Each remote track is displayed even if local identity is missing:
+    // never invent a position-to-CUE assignment from the tracklist alone.
+    for (std::size_t i=0;i<edition.tracks.size();++i) {
+        if (output.size()>1000)
+            throw std::invalid_argument("MusicBrainz preview row limit exceeded.");
+        const auto& remote=edition.tracks[i];
+        std::optional<std::size_t> local_ordinal;
+        for (const auto& link:alignment.tracks) {
+            if (link.edition_track_index==i &&
+                link.decision!=MatchDecision::Rejected) {
+                local_ordinal=link.source_index;
+                break;
+            }
+        }
+        for (const std::string name:{"TITLE","ARTIST"}) {
+            const auto& value=name=="TITLE"
+                ? remote.recording.title : remote.recording.primary_artist;
+            FieldEvidence field{name,{value},"musicbrainz",
+                remote.source_track_id.empty()?edition.edition_id:remote.source_track_id,
+                EvidenceScope::Recording,DateMeaning::NotDate};
+            FieldReviewRow row;
+            row.field="Disc "+std::to_string(remote.disc_number)+
+                " / Track "+std::to_string(remote.track_number)+
+                " / "+name;
+            row.candidate=field;
+            if (local_ordinal) {
+                const auto review=review_cue_candidate_fields(
+                    cue,*local_ordinal,{field});
+                row.original_values=review.front().original_values;
+                row.state=review.front().state;
+                row.reason="musicbrainz_live_release_track_match_review_"+
+                           review.front().reason;
+            } else {
+                row.state=FieldReviewState::Blocked;
+                row.reason="musicbrainz_live_release_unmatched_no_safe_track_identity";
+            }
+            output.push_back(std::move(row));
+        }
+    }
+    return output;
+}
+
 std::wstring track_master_cell(PreviewState& state, std::size_t row, int col) {
     if (row >= state.track_view_order.size()) return {};
     const auto index = state.track_view_order[row];
