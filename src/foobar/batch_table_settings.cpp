@@ -10,6 +10,10 @@ namespace {
 constexpr GUID kBatchPreviewWindowSizeGuid =
     {0x03bf8a72, 0xe38f, 0x4a86, {0x8f, 0xab, 0xda, 0x56, 0x13, 0xbc, 0x87, 0x39}};
 cfg_string g_batch_preview_window_size(kBatchPreviewWindowSizeGuid, "");
+constexpr GUID kBatchPreviewPlacementGuid =
+    {0x64c0a912, 0xe4c1, 0x4b53, {0x9d, 0xb1, 0x29, 0xd5, 0x43, 0x3f, 0x57, 0x86}};
+cfg_string g_batch_preview_placement(kBatchPreviewPlacementGuid, "");
+
 
 constexpr GUID kBatchTableLayoutGuid =
     {0xbca40f8b, 0x927b, 0x4fe6, {0xa1, 0x75, 0x16, 0x09, 0x63, 0xd1, 0x47, 0x21}};
@@ -30,6 +34,19 @@ cfg_string g_detail_grid_layout(kDetailGridGuid,
     "v1|0,1,2,3,4|80,105,105,60,75|31|0|0");
 
 } // namespace
+
+std::optional<djmeta::PreviewWindowPlacement> load_batch_preview_window_placement() {
+    const auto raw=g_batch_preview_placement.get();
+    return djmeta::parse_preview_window_placement(raw.c_str());
+}
+void store_batch_preview_window_placement(djmeta::PreviewWindowPlacement value) {
+    const auto serialized=djmeta::serialize_preview_window_placement(value);
+    if (serialized.empty())
+        throw std::invalid_argument("Invalid preview window placement.");
+    const auto before=g_batch_preview_placement.get();
+    if (std::string_view(before.c_str())!=serialized)
+        g_batch_preview_placement.set(serialized.c_str());
+}
 
 std::optional<djmeta::PreviewWindowSize> load_batch_preview_window_size() {
     const auto stored = g_batch_preview_window_size.get();
