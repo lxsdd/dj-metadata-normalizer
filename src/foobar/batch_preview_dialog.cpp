@@ -727,6 +727,7 @@ void layout_musicbrainz_detail_pane(PreviewState& state) {
         client.bottom-state.initial_client_height);
     const auto frame=split.detail;
     const int width=frame.right-frame.left;
+    const int height=frame.bottom-frame.top;
     const bool active=state.show_candidate && state.musicbrainz_live_view &&
         state.candidate_source_index==state.selected_track_index;
     if (!active) {
@@ -744,8 +745,8 @@ void layout_musicbrainz_detail_pane(PreviewState& state) {
     const auto place=[&](HDWP& hdwp,HWND window,const RECT& bounds) {
         hdwp=DeferWindowPos(hdwp,window,nullptr,
             bounds.left,bounds.top,
-            (std::max)(8,bounds.right-bounds.left),
-            (std::max)(8,bounds.bottom-bounds.top),
+            (std::max<int>)(8,bounds.right-bounds.left),
+            (std::max<int>)(8,bounds.bottom-bounds.top),
             SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
         return hdwp!=nullptr;
     };
