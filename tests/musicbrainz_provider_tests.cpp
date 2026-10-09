@@ -43,19 +43,21 @@ int main() {
     rejects([]{(void)make_search_path(SearchKind::Release,"","");},
             "empty search title rejected");
 
-    const std::string recording_json=std::string(R"({
+    const std::string recording_json=R"MB({
        "created":"2026-10-09","recording-count":2,
        "recordings":[
-         {"id":")")+first+R"(","title":"Bj\u00f6rk & \u6771\u4eac",
+         {"id":"11111111-1111-1111-1111-111111111111",
+          "title":"Bj\u00f6rk & \u6771\u4eac",
           "score":99,"length":215540,
           "artist-credit":[{"name":"Alpha","joinphrase":" feat. "},{"name":"Beta"}],
           "releases":[{"id":"ignored"}]},
-         {"id":")"+second+R"(","title":"Track (Radio Edit)",
+         {"id":"22222222-2222-2222-2222-222222222222",
+          "title":"Track (Radio Edit)",
           "score":55,"length":200000,
           "artist-credit":[{"name":"Other Artist"}]},
          {"id":"invalid/redirect","title":"Bad","artist-credit":[{"name":"X"}]}
        ]
-    })";
+    })MB";
     const auto found=parse_search(recording_json,SearchKind::Recording);
     check(found.candidates.size()==2 &&
           found.candidates[0].mbid==first &&
@@ -67,32 +69,38 @@ int main() {
           "official recording response preserves Unicode, artist roles, duration, score");
     check(parse_search(R"({"releases":[]})",SearchKind::Release).candidates.empty(),
           "empty permitted source response never fabricates a hit");
-    const auto release_search=std::string(R"({"releases":[{"id":")")+first+
-        R"(","title":"Album Edition","date":"2001-06-15","score":91,
-        "artist-credit":[{"name":"Example Artist"}]}]})";
+    const auto release_search=std::string(R"MB({
+        "releases":[{"id":"11111111-1111-1111-1111-111111111111",
+        "title":"Album Edition","date":"2001-06-15","score":91,
+        "artist-credit":[{"name":"Example Artist"}]}]
+    })MB");
     const auto releases=parse_search(release_search,SearchKind::Release);
     check(releases.candidates.size()==1&&
           releases.candidates[0].kind==SearchKind::Release&&
           releases.candidates[0].release_date=="2001-06-15",
           "release search retains explicit release-edition date");
 
-    const auto edition_json=std::string(R"({
-      "id":")")+first+R"(", "title":"Album Edition", "date":"2001-06-15",
+    const auto edition_json=std::string(R"MB({
+      "id":"11111111-1111-1111-1111-111111111111",
+      "title":"Album Edition", "date":"2001-06-15",
       "artist-credit":[{"name":"Example Artist"}],
       "media":[
        {"position":1,"tracks":[
          {"position":1,"title":"First (Extended Mix)","length":420000,
           "artist-credit":[{"name":"Example Artist"}],
-          "recording":{"id":")"+second+R"(","title":"First (Extended Mix)",
-             "isrcs":["GBABC2600001"],"artist-credit":[{"name":"Example Artist"}]}},
+          "recording":{"id":"22222222-2222-2222-2222-222222222222",
+             "title":"First (Extended Mix)",
+             "isrcs":["GBABC2600001"],
+             "artist-credit":[{"name":"Example Artist"}]}},
          {"position":2,"title":"Second","length":301000,
-          "recording":{"id":")"+second+R"(","title":"Second",
-             "artist-credit":[{"name":"Example Artist"}]}}]},
+          "recording":{"id":"22222222-2222-2222-2222-222222222222",
+             "title":"Second","artist-credit":[{"name":"Example Artist"}]}}]},
        {"position":2,"tracks":[
          {"position":1,"title":"Third","length":240000,
-          "recording":{"id":")"+second+R"(","title":"Third",
-             "artist-credit":[{"name":"Guest Artist"}]}}]}
-     ]})";
+          "recording":{"id":"22222222-2222-2222-2222-222222222222",
+             "title":"Third","artist-credit":[{"name":"Guest Artist"}]}}]}
+      ]
+    })MB");
     const auto edition=parse_release_lookup(edition_json,first);
     check(edition.provider=="musicbrainz"&&edition.edition_id==first &&
           edition.fields.size()==3 &&
