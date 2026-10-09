@@ -61,7 +61,11 @@ bool centers_match(HWND dialog, int label_id, int control_id) {
         return false;
     COMBOBOXINFO info{};
     info.cbSize = sizeof(info);
-    if (GetComboBoxInfo(input, &info)) b = info.rcItem;
+    if (GetComboBoxInfo(input, &info)) {
+        b=info.rcItem;
+        MapWindowPoints(input,HWND_DESKTOP,
+                        reinterpret_cast<POINT*>(&b),2);
+    }
     const int offset = (a.top + a.bottom) - (b.top + b.bottom);
     return offset >= -2 && offset <= 2;
 }
@@ -597,13 +601,16 @@ int main() {
     const auto center=[](const RECT& r){return (r.top+r.bottom)/2;};
     check(center(aligned_query)==center(aligned_search)+2,
           "search edit text is optically aligned two pixels below themed button frame");
-    const int scope_center=center(scope_info.rcItem);
+    RECT scope_item=scope_info.rcItem;
+    MapWindowPoints(GetDlgItem(dialog,IDC_METADATA_REVIEW_SCOPE),
+                    HWND_DESKTOP,reinterpret_cast<POINT*>(&scope_item),2);
+    const int scope_center=center(scope_item);
     const int accept_center=center(aligned_review_button);
     if (scope_center != accept_center)
         std::cerr << "SCOPE_ALIGNMENT: combo_center=" << scope_center
                   << " accept_center=" << accept_center
-                  << " combo_top=" << scope_info.rcItem.top
-                  << " combo_bottom=" << scope_info.rcItem.bottom
+                  << " combo_top=" << scope_item.top
+                  << " combo_bottom=" << scope_item.bottom
                   << " action_top=" << aligned_review_button.top
                   << " action_bottom=" << aligned_review_button.bottom
                   << " outer_rect=" << GetWindowLongPtrW(
