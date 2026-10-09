@@ -66,6 +66,29 @@ int main() {
     check(digitally_published.fields[0].date_meaning == DateMeaning::DigitalPublication,
           "digital publication date remains distinguishable");
 
+    const auto cue_track = parse_manual_candidate(
+        "@provider=discogs\n@id=track:12\n@scope=recording\n"
+        "@cue_track_ordinal=2\nTITLE=Sunset\n");
+    check(cue_track.cue_track_ordinal &&
+          *cue_track.cue_track_ordinal == 1 &&
+          cue_track.scope == EvidenceScope::Recording,
+          "explicit CUE order is 1-based and converted once to index 1");
+    const auto album_scope = parse_manual_candidate(
+        "@provider=discogs\n@id=release:123\n@scope=edition\nALBUM=Example\n");
+    check(!album_scope.cue_track_ordinal, "legacy album evidence is unchanged");
+    fails("@provider=discogs\n@id=track:12\n@cue_track_ordinal=0\nTITLE=A\n",
+          "track order zero rejected");
+    fails("@provider=discogs\n@id=track:12\n@cue_track_ordinal=02\nTITLE=A\n",
+          "noncanonical leading zero order rejected");
+    fails("@provider=discogs\n@id=track:12\n@cue_track_ordinal=1025\nTITLE=A\n",
+          "CUE position capped at 1024");
+    fails("@provider=discogs\n@id=track:12\n@cue_track_ordinal=1\n"
+          "@cue_track_ordinal=2\nTITLE=A\n", "duplicate CUE order rejected");
+    fails("@provider=discogs\n@id=track:12\n@cue_track_ordinal=12x\nTITLE=A\n",
+          "untrusted CUE order rejects trailing text");
+    fails("@provider=discogs\n@id=track:12\nTITLE=A\n@cue_track_ordinal=1\n",
+          "CUE order must be before fields");
+
     fails("", "empty");
     fails("@provider=discogs\n@id=release:1\n", "missing tag");
     fails("@provider=discogs\nTITLE=Unknown\n", "no identity");
