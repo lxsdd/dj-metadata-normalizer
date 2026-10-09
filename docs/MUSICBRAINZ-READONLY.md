@@ -27,6 +27,18 @@ No persistent search history or HTTP response cache. The UI retains the most rec
 4. For a CUE search, select a release row (TITLE, ARTIST or DATE) in the right table, then click **Load MB release**. This makes one further official read-only GET and compares album fields; tracks are aligned through the existing guarded one-to-one recording-vs-release matcher. With missing, ambiguous or unqualified local CUE track titles/artists, the release tracks are shown as **Blocked/unmatched** instead of assigned by position. CUE FILE/INDEX and container data are untouched.
 5. No automatic metadata acceptance, writing, background matching, artwork download, file operation or CUE rewrite. The previously qualified manual clipboard flow and CUE inspection remain independent.
 
+## Current browser UX and modal-vs-modeless decision
+
+The initial official MusicBrainz search has been accepted in installed foobar: read-only API candidates load from `musicbrainz.org`. A later host screenshot showed **eight main rows per eight releases** and a subsequent selected album tracklist with one album + individual disc/track rows. New defects appeared in the nested comparison window: its caption was clipped against the detail ListView header, and Original/Proposed/Status subitems appeared empty. The search EDIT caption baseline and the `Selected changes` combobox did not align with nearby buttons. These are treated as **open regressions**, not as cosmetic acceptance.
+
+The next patch:
+- Aligns actual edit/combo input rectangles with adjacent action buttons, **not merely the dialog-unit top coordinate**; the combo uses `GetComboBoxInfo` and must preserve x-position during screen/client conversions.
+- Reserves a separate DPI-scaled caption row before the nested detail ListView, and populates each subitem via the native Windows ListView API, with a real-control round-trip test.
+- Offers double-click / Enter to load the **selected, verified MusicBrainz release ID** through the existing explicit action, respecting its HTTP rate guard and source checks. Only the online release-browse state permits that activation.
+- Keeps one release/recording per main row, one album/track per loaded-release row, selected-field details underneath and compact source `Track / Hits / Blocked` counters; normal foobar grid preferences remain separate.
+
+**Architecture decision:** The current `Prepare Tracks` dialog is still **modal** (`DialogBoxParamW`) and deliberately has no `WS_MINIMIZEBOX`. A Minimize button on a modal owner-blocking dialog would not permit other foobar operations. The intended finished UX is a single-instance **modeless** foobar-owned browser/workspace that supports minimize/restore, playlist and playback activity in parallel. Converting this dialog requires a separate tested lifetime/focus design: heap-owned snapshot until destroy, reliable foobar dialog keyboard integration, shutdown cleanup, change/staleness checks while another playlist or tag editor modifies source files, no duplicate simultaneous write approvals. Do not claim that this modeless refactor is already complete.
+
 ## Exact boundaries and limitations
 
 - Search results are a source of **candidate metadata only**, not proof of the exact audio mix, reissue, extended/radio version, mastering or Discogs-style credit assignments.
