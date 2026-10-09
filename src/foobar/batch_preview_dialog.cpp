@@ -377,45 +377,58 @@ std::string unique_cue_album_value(const djmeta::CueMetadataInventory& cue,
     return value;
 }
 
-std::vector<djmeta::online::FieldReviewRow> musicbrainz_search_rows(
+// One MusicBrainz candidate == one visible master row. Field-level
+// differences are retained only in the secondary, selected-candidate pane.
+struct MusicBrainzBrowseRows {
+    std::vector<djmeta::online::FieldReviewRow> summary;
+    std::vector<std::vector<djmeta::online::FieldReviewRow>> detail;
+};
+MusicBrainzBrowseRows musicbrainz_search_rows(
     const djmeta::online::musicbrainz::SearchResult& found,
     const std::string& local_title, const std::string& local_artist) {
     using namespace djmeta::online;
-    std::vector<FieldReviewRow> rows;
-    std::size_t ordinal=0;
-    for (const auto& hit:found.candidates) {
-        ++ordinal;
-        const std::string prefix=
-            std::string(hit.kind==musicbrainz::SearchKind::Release ?
-                        "Release " : "Recording ") + std::to_string(ordinal) + " / ";
-        const std::string reason=
-            "musicbrainz_live_search_rank_"+std::to_string(hit.search_score)+
-            "_not_write_confidence";
+    MusicBrainzBrowseRows result;
+    for (const auto& hit : found.candidates) {
+        FieldReviewRow summary;
+        summary.field=hit.title;
+        summary.original_values={hit.artist};
+        if (!hit.release_date.empty()) summary.candidate.values={hit.release_date};
+        summary.candidate.field="CANDIDATE";
+        summary.candidate.provider="musicbrainz";
+        summary.candidate.source_id=hit.mbid;
+        summary.candidate.scope=hit.kind==musicbrainz::SearchKind::Release
+            ? EvidenceScope::Edition:EvidenceScope::Recording;
+        summary.reason="musicbrainz_live_candidate_rank_"+std::to_string(hit.search_score);
+        summary.state=FieldReviewState::NeedsReview;
+        result.summary.push_back(std::move(summary));
+        std::vector<FieldReviewRow> detail;
         const auto add=[&](const std::string& field,
                            const std::string& original,
                            const std::string& proposed) {
             if (proposed.empty()) return;
             FieldReviewRow row;
-            row.field=prefix+field;
+            row.field=field;
             if (!original.empty()) row.original_values={original};
             row.candidate.field=field;
             row.candidate.provider="musicbrainz";
-            row.candidate.source_id=hit.mbid; // verified response UUID.
+            row.candidate.source_id=hit.mbid;
             row.candidate.scope=hit.kind==musicbrainz::SearchKind::Release
-                ? EvidenceScope::Edition : EvidenceScope::Recording;
+                ? EvidenceScope::Edition:EvidenceScope::Recording;
             row.candidate.values={proposed};
             row.state=(!original.empty() &&
                        comparable(original)==comparable(proposed))
                 ? FieldReviewState::Unchanged : FieldReviewState::NeedsReview;
-            row.reason=reason;
-            rows.push_back(std::move(row));
+            row.reason="musicbrainz_live_candidate_detail";
+            detail.push_back(std::move(row));
         };
-        add("TITLE",local_title,hit.title);
+        add(hit.kind==musicbrainz::SearchKind::Release ? "ALBUM" : "TITLE",
+            local_title,hit.title);
         add("ARTIST",local_artist,hit.artist);
         if (hit.kind==musicbrainz::SearchKind::Release)
             add("EDITION DATE","",hit.release_date);
+        result.detail.push_back(std::move(detail));
     }
-    return rows;
+    return result;
 }
 
 // Only a selected, verified MusicBrainz release MBID is allowed to feed this
@@ -488,6 +501,45 @@ std::vector<djmeta::online::FieldReviewRow> musicbrainz_cue_release_rows(
         }
     }
     return output;
+}
+
+MusicBrainzBrowseRows group_musicbrainz_release_rows(
+    const std::vector<djmeta::online::FieldReviewRow>& flat) {
+    using namespace djmeta::online;
+    MusicBrainzBrowseRows out;
+    for (const auto& row:flat) {
+        // Album and each Disc/Track are one summary item, irrespective
+        // of how many individual fields that item exposes. The existing
+        // separate detail rows remain intact after user selection.
+        const auto at=row.field.rfind(" / ");
+        const std::string name=at==std::string::npos
+            ? row.field:row.field.substr(0,at);
+        if (out.summary.empty() || out.summary.back().field!=name) {
+            FieldReviewRow summary;
+            summary.field=name;
+            summary.candidate.provider="musicbrainz";
+            summary.candidate.source_id=row.candidate.source_id;
+            summary.candidate.field="RELEASE TRACK";
+            summary.state=row.state;
+            summary.reason="musicbrainz_live_release_group";
+            out.summary.push_back(std::move(summary));
+            out.detail.emplace_back();
+        }
+        auto& summary=out.summary.back();
+        if (row.field.ends_with(" / TITLE") ||
+            row.field.ends_with(" / PERFORMER") ||
+            row.field.ends_with(" / ALBUM")) {
+            if (!row.original_values.empty()) summary.original_values=row.original_values;
+            summary.candidate.values=row.candidate.values;
+        }
+        if (row.state==FieldReviewState::Blocked)
+            summary.state=FieldReviewState::Blocked;
+        else if (row.state==FieldReviewState::NeedsReview &&
+                 summary.state!=FieldReviewState::Blocked)
+            summary.state=FieldReviewState::NeedsReview;
+        out.detail.back().push_back(row);
+    }
+    return out;
 }
 
 std::wstring track_master_cell(PreviewState& state, std::size_t row, int col) {
