@@ -147,6 +147,20 @@ int main() {
               "actual native control preserves each of the four online detail cells");
     }
     ListView_DeleteAllItems(online_details);
+    for (int dpi : {96,120,144,192}) {
+        for (int height : {310,510,790}) {
+            RECT browser_frame{500,120,1120,120+height};
+            const auto pane=djmeta_foobar::musicbrainz_pane_bounds(browser_frame,dpi);
+            check(pane.hits.top==browser_frame.top &&
+                  pane.hits.bottom<pane.caption.top &&
+                  pane.caption.bottom+3<=pane.details.top &&
+                  pane.details.bottom==browser_frame.bottom &&
+                  pane.details.top<pane.details.bottom &&
+                  pane.caption.left==pane.hits.left &&
+                  pane.details.right==pane.hits.right,
+                  "DPI-aware selected-candidate label never collides with list header");
+        }
+    }
     check(djmeta_foobar::may_activate_musicbrainz_release(
         LVN_ITEMACTIVATE,true,true,false,true),
         "double-click or Enter can load a verified MusicBrainz release");
