@@ -104,6 +104,19 @@ int main() {
     check(std::wcscmp(value, L"My DJ profile") == 0,
           "custom profile text survives in the actual control");
 
+    HWND mb_query = GetDlgItem(dialog, IDC_METADATA_MB_QUERY);
+    HWND mb_search = GetDlgItem(dialog, IDC_METADATA_MB_SEARCH);
+    HWND mb_load = GetDlgItem(dialog, IDC_METADATA_MB_LOAD_RELEASE);
+    check(mb_query != nullptr && mb_search != nullptr && mb_load != nullptr,
+          "production official MusicBrainz online search/query and release controls exist");
+    RECT mb_query_rect{}, mb_search_rect{}, mb_load_rect{};
+    check(GetWindowRect(mb_query, &mb_query_rect) != FALSE &&
+          GetWindowRect(mb_search, &mb_search_rect) != FALSE &&
+          GetWindowRect(mb_load, &mb_load_rect) != FALSE &&
+          mb_query_rect.right <= mb_search_rect.left &&
+          mb_load_rect.right > mb_load_rect.left,
+          "MusicBrainz search action does not overlay text query");
+
     HWND cue_inspect = GetDlgItem(dialog, IDC_METADATA_INSPECT_CUE);
     check(cue_inspect != nullptr,
           "production read-only CUE inspect button exists in real dialog resource");
