@@ -103,6 +103,7 @@ struct PreviewState {
     djmeta::ReviewGridLayout<4> track_grid;
     djmeta::ReviewGridLayout<5> detail_grid;
     bool updating_track_selection = false;
+    bool updating_musicbrainz_selection = false;
     std::size_t selected_track_index = 0;
     std::size_t focused_track_index = (std::numeric_limits<std::size_t>::max)();
     djmeta::MetadataFocus metadata_focus = djmeta::MetadataFocus::Music;
@@ -551,6 +552,13 @@ std::wstring track_master_cell(PreviewState& state, std::size_t row, int col) {
         if (state.candidate_source_index != index) return L"—";
         const auto& rows = state.candidate_rows;
         if (col == 1) return std::to_wstring(rows.size());
+        if (state.musicbrainz_live_view) {
+            if (col == 2) return L"—"; // browser hits aren't per-field diffs
+            return std::to_wstring(static_cast<std::size_t>(std::count_if(
+                rows.begin(),rows.end(),[](const auto& item) {
+                    return item.state==djmeta::online::FieldReviewState::Blocked;
+                })));
+        }
         if (state.cue_inspection_mode) return L"0";
         const auto kind = col == 2 ? djmeta::online::FieldReviewState::NeedsReview
                                    : djmeta::online::FieldReviewState::Blocked;
@@ -860,6 +868,25 @@ void update_metadata_table(PreviewState& state) {
         ListView_SetItemCountEx(state.metadata_list,
             static_cast<int>(state.candidate_view_order.size()),
             LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+        layout_musicbrainz_detail_pane(state);
+        update_musicbrainz_browse_headers(state);
+        if (state.musicbrainz_live_view) {
+            // The sorted ListView is the browser; preserve the selection if
+            // still in range, otherwise default to its first available hit.
+            int selected=ListView_GetNextItem(state.metadata_list,-1,LVNI_SELECTED);
+            if ((selected<0 ||
+                 static_cast<std::size_t>(selected)>=state.candidate_view_order.size()) &&
+                !state.candidate_view_order.empty()) {
+                state.updating_musicbrainz_selection=true;
+                ListView_SetItemState(state.metadata_list,-1,0,LVIS_SELECTED);
+                ListView_SetItemState(state.metadata_list,0,
+                    LVIS_SELECTED|LVIS_FOCUSED,LVIS_SELECTED|LVIS_FOCUSED);
+                state.updating_musicbrainz_selection=false;
+            }
+            refresh_musicbrainz_detail_rows(state);
+        } else {
+            ListView_DeleteAllItems(state.musicbrainz_details);
+        }
         InvalidateRect(state.metadata_list, nullptr, FALSE);
         InvalidateRect(state.metadata_track_list, nullptr, FALSE); // counts may change after import
         const std::wstring hint = !selected_valid
@@ -1003,6 +1030,7 @@ void show_preview_page(HWND dialog, PreviewState& state,
         candidate ? SW_SHOW : SW_HIDE);
     ShowWindow(GetDlgItem(dialog, IDC_METADATA_MB_LOAD_RELEASE),
         candidate ? SW_SHOW : SW_HIDE);
+    layout_musicbrainz_detail_pane(state);
     const wchar_t* headers[2] = { candidate ? L"Source" : L"Safety",
                                    candidate ? L"Status" : L"Decision" };
     for (int i = 0; i < 2; ++i) {
@@ -1012,9 +1040,9 @@ void show_preview_page(HWND dialog, PreviewState& state,
         ListView_SetColumn(state.metadata_list, i + 3, &col);
     }
     const wchar_t* track_headers[3] = {
-        candidate ? L"Tags" : L"Music",
-        candidate ? L"Diffs" : L"Other",
-        candidate ? L"Block" : L"Review"
+        candidate ? (state.musicbrainz_live_view?L"Hits":L"Tags") : L"Music",
+        candidate ? (state.musicbrainz_live_view?L"—":L"Diffs") : L"Other",
+        candidate ? (state.musicbrainz_live_view?L"Unmatched":L"Block") : L"Review"
     };
     for (int i = 0; i < 3; ++i) {
         LVCOLUMNW col{};
@@ -1346,6 +1374,9 @@ void resize_batch_dialog(PreviewState& state, int width, int height) {
     if (!apply_native_preview_resize(
             state.resize_controls, state.metadata_track_list, state.metadata_list,
             dx, dy)) return;
+    layout_musicbrainz_detail_pane(state);
+    if (state.musicbrainz_live_view)
+        update_musicbrainz_browse_headers(state);
     // Repaint moved siblings as a single region. Do not force synchronous
     // painting for every WM_SIZE while the user is dragging the border.
     RedrawWindow(state.dialog, nullptr, nullptr,
@@ -1980,6 +2011,18 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                         lstrcpynW(tip->pszText, text.c_str(), tip->cchTextMax);
                     }
                 }
+            }
+            return TRUE;
+        }
+        if (header && header->idFrom == IDC_METADATA_LIST &&
+            header->code == LVN_ITEMCHANGED && state->show_candidate &&
+            state->musicbrainz_live_view) {
+            if (!state->updating_musicbrainz_selection) {
+                const auto* changed=reinterpret_cast<const NMLISTVIEW*>(lp);
+                if (changed && (changed->uChanged & LVIF_STATE) &&
+                    ((changed->uNewState & LVIS_SELECTED) !=
+                     (changed->uOldState & LVIS_SELECTED)))
+                    refresh_musicbrainz_detail_rows(*state);
             }
             return TRUE;
         }
