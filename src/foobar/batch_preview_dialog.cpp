@@ -64,6 +64,8 @@ struct PreviewState {
     int initial_list_bottom = 0;
     int initial_window_width = 0;
     int initial_window_height = 0;
+    int initial_window_left = 0;
+    int initial_window_top = 0;
     std::vector<NativePreviewResizeChild> resize_controls;
     std::vector<PreviewEntry> entries;
     djmeta::BatchPreviewTable table;
@@ -74,6 +76,8 @@ struct PreviewState {
     HWND list = nullptr;
     HWND metadata_list = nullptr;
     HWND metadata_track_list = nullptr;
+    HWND musicbrainz_details = nullptr;
+    HWND musicbrainz_details_label = nullptr;
     HWND metadata_filter = nullptr;
     HWND metadata_track_filter = nullptr;
     HWND metadata_scope = nullptr;
@@ -87,6 +91,9 @@ struct PreviewState {
     djmeta::online::musicbrainz::SearchKind musicbrainz_kind =
         djmeta::online::musicbrainz::SearchKind::Recording;
     std::vector<djmeta::online::musicbrainz::SearchCandidate> musicbrainz_results;
+    std::vector<std::vector<djmeta::online::FieldReviewRow>> musicbrainz_detail_groups;
+    std::string musicbrainz_original_title;
+    std::string musicbrainz_original_artist;
     bool show_whitespace = false;
     std::size_t candidate_source_index = (std::numeric_limits<std::size_t>::max)();
     std::vector<djmeta::online::FieldReviewRow> candidate_rows;
@@ -1111,6 +1118,8 @@ void capture_resize_layout(PreviewState& state) {
     state.initial_client_height = client.bottom;
     state.initial_window_width = window_rect.right - window_rect.left;
     state.initial_window_height = window_rect.bottom - window_rect.top;
+    state.initial_window_left = window_rect.left;
+    state.initial_window_top = window_rect.top;
     state.resize_controls.clear();
 
     EnumChildWindows(dialog, [](HWND control, LPARAM state_ptr) -> BOOL {
@@ -1221,18 +1230,12 @@ void save_batch_dialog_window_size(const PreviewState& state) {
         MulDiv(bounds.left,96,dpi), MulDiv(bounds.top,96,dpi),
         MulDiv(width,96,dpi), MulDiv(height,96,dpi), maximized};
     if (!djmeta::valid_preview_window_placement(saved)) return;
-    if (!load_batch_preview_window_placement() && !maximized) {
-        // Keep untouched defaults out of foobar cfg when the dialog never
-        // moved or resized. Existing legacy size preference is preserved.
-        RECT original{};
-        if (GetWindowRect(state.dialog,&original) &&
-            width==state.initial_window_width &&
-            height==state.initial_window_height &&
-            !load_batch_preview_window_size()) {
-            // A default-sized dialog may still have been moved; persist
-            // coordinates in all cases so position is not silently discarded.
-        }
-    }
+    if (!load_batch_preview_window_placement() && !maximized &&
+        bounds.left==state.initial_window_left &&
+        bounds.top==state.initial_window_top &&
+        width==state.initial_window_width &&
+        height==state.initial_window_height &&
+        !load_batch_preview_window_size()) return;
     store_batch_preview_window_placement(saved);
 }
 
@@ -1572,12 +1575,15 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         state->dark.AddDialogWithControls(dialog);
         state->list = GetDlgItem(dialog, IDC_BATCH_LIST);
         state->metadata_list = GetDlgItem(dialog, IDC_METADATA_LIST);
+        state->musicbrainz_details = GetDlgItem(dialog, IDC_METADATA_MB_DETAILS);
+        state->musicbrainz_details_label = GetDlgItem(dialog, IDC_METADATA_MB_DETAIL_LABEL);
         state->metadata_track_list = GetDlgItem(dialog, IDC_METADATA_TRACK_LIST);
         state->metadata_filter = GetDlgItem(dialog, IDC_METADATA_FILTER);
         state->metadata_track_filter = GetDlgItem(dialog, IDC_METADATA_TRACK_FILTER);
         state->metadata_scope = GetDlgItem(dialog, IDC_METADATA_REVIEW_SCOPE);
         state->tabs = GetDlgItem(dialog, IDC_BATCH_TABS);
-        if (!state->list || !state->metadata_list || !state->metadata_track_list ||
+        if (!state->list || !state->metadata_list || !state->musicbrainz_details ||
+            !state->musicbrainz_details_label || !state->metadata_track_list ||
             !state->metadata_filter || !state->metadata_track_filter ||
             !state->metadata_scope || !state->tabs) return FALSE;
         for (const wchar_t* name : {L"Metadata changes", L"File locations", L"Candidate comparison"}) {
@@ -1600,6 +1606,12 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
         ListView_SetExtendedListViewStyle(state->metadata_list,
             LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP |
             LVS_EX_HEADERDRAGDROP);
+        ListView_SetExtendedListViewStyle(state->musicbrainz_details,
+            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_INFOTIP);
+        add_column(state->musicbrainz_details, 0, L"Field", 92);
+        add_column(state->musicbrainz_details, 1, L"Original", 75);
+        add_column(state->musicbrainz_details, 2, L"Suggested", 88);
+        add_column(state->musicbrainz_details, 3, L"Status", 65);
         add_column(state->metadata_list, 0, L"Field", 78);
         add_column(state->metadata_list, 1, L"Original", 95);
         add_column(state->metadata_list, 2, L"Proposed", 95);
