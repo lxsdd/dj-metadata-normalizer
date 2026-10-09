@@ -2059,8 +2059,10 @@ INT_PTR CALLBACK batch_dialog_proc(HWND dialog, UINT message, WPARAM wp, LPARAM 
                     "No TITLE is available. Enter a title/album in the search field.");
             // No path, artist artwork, file hash, full CUE or binary audio
             // ever leaves the host. Only title and optional credited artist.
+            // A manually typed query is an explicit broader search:
+            // do not silently append an unrelated local artist constraint.
             const auto path=djmeta::online::musicbrainz::make_search_path(
-                kind,term,local_artist);
+                kind,term,entered.empty()?local_artist:std::string{});
             SetDlgItemTextW(dialog,IDC_BATCH_HINT,
                 L"Contacting official MusicBrainz HTTPS API (read-only)...");
             RedrawWindow(dialog,nullptr,nullptr,RDW_INVALIDATE|RDW_UPDATENOW);
