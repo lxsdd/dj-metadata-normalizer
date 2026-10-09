@@ -597,7 +597,19 @@ int main() {
     const auto center=[](const RECT& r){return (r.top+r.bottom)/2;};
     check(center(aligned_query)==center(aligned_search)+2,
           "search edit text is optically aligned two pixels below themed button frame");
-    check(center(scope_info.rcItem)==center(aligned_review_button),
+    const int scope_center=center(scope_info.rcItem);
+    const int accept_center=center(aligned_review_button);
+    if (scope_center != accept_center)
+        std::cerr << "SCOPE_ALIGNMENT: combo_center=" << scope_center
+                  << " accept_center=" << accept_center
+                  << " combo_top=" << scope_info.rcItem.top
+                  << " combo_bottom=" << scope_info.rcItem.bottom
+                  << " action_top=" << aligned_review_button.top
+                  << " action_bottom=" << aligned_review_button.bottom
+                  << " outer_rect=" << GetWindowLongPtrW(
+                        GetDlgItem(dialog,IDC_METADATA_REVIEW_SCOPE),GWL_STYLE)
+                  << "\n";
+    check(scope_center==accept_center,
           "Select changes combo item aligns with Accept action baseline");
     djmeta_foobar::align_native_preview_form(dialog);
     RECT repeated{};
