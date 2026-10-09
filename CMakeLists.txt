@@ -298,7 +298,18 @@ else()
     target_compile_options(djmeta_cue_online_review_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# DPI-independent persisted Win32 dialog-size schema (core-only C++ test).
+add_executable(djmeta_preview_window_geometry_tests tests/preview_window_geometry_tests.cpp)
+target_include_directories(djmeta_preview_window_geometry_tests PRIVATE include)
+target_compile_features(djmeta_preview_window_geometry_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(djmeta_preview_window_geometry_tests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(djmeta_preview_window_geometry_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
 enable_testing()
+add_test(NAME djmeta_preview_window_geometry_tests COMMAND djmeta_preview_window_geometry_tests)
 add_test(NAME djmeta_cue_online_review_tests COMMAND djmeta_cue_online_review_tests)
 add_test(NAME djmeta_cue_online_bridge_tests COMMAND djmeta_cue_online_bridge_tests)
 add_test(NAME djmeta_cue_metadata_tests COMMAND djmeta_cue_metadata_tests)
