@@ -104,6 +104,14 @@ int main() {
     check(std::wcscmp(value, L"My DJ profile") == 0,
           "custom profile text survives in the actual control");
 
+    HWND cue_inspect = GetDlgItem(dialog, IDC_METADATA_INSPECT_CUE);
+    check(cue_inspect != nullptr,
+          "production read-only CUE inspect button exists in real dialog resource");
+    RECT cue_inspect_rect{};
+    check(GetWindowRect(cue_inspect, &cue_inspect_rect) != FALSE &&
+          cue_inspect_rect.right > cue_inspect_rect.left,
+          "read-only CUE inspect button is visible-sized");
+
     HWND candidate_import = GetDlgItem(dialog, IDC_METADATA_IMPORT_CANDIDATE);
     check(candidate_import != nullptr,
           "production candidate comparison clipboard import button exists");
