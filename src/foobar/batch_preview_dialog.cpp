@@ -738,8 +738,12 @@ void layout_musicbrainz_detail_pane(PreviewState& state) {
         ShowWindow(state.musicbrainz_details_label,SW_HIDE);
         return;
     }
-    const int detail_height=(std::clamp)(height/3,82,180);
-    const int top_height=(std::max)(70,height-detail_height-19);
+    // Reserve a real caption line and vertical breathing room between the
+    // browser and the nested table. The old +2/+17 geometry was overlapping
+    // native ListView borders/fonts (visible at 100%-200% scaling).
+    const int detail_height=(std::clamp)(height/3,98,210);
+    const int caption_gap=(std::max)(26,MulDiv(29,state.active_dpi,96));
+    const int top_height=(std::max)(70,height-detail_height-caption_gap);
     HDWP defer=BeginDeferWindowPos(3);
     if (!defer) return;
     defer=DeferWindowPos(defer,state.metadata_list,nullptr,
@@ -747,12 +751,12 @@ void layout_musicbrainz_detail_pane(PreviewState& state) {
         SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
     if (!defer) return;
     defer=DeferWindowPos(defer,state.musicbrainz_details_label,nullptr,
-        frame.left,frame.top+top_height+2,width,14,
+        frame.left,frame.top+top_height+5,width,18,
         SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
     if (!defer) return;
     defer=DeferWindowPos(defer,state.musicbrainz_details,nullptr,
-        frame.left,frame.top+top_height+17,width,
-        (std::max)(35,height-top_height-17),
+        frame.left,frame.top+top_height+caption_gap,width,
+        (std::max)(35,height-top_height-caption_gap),
         SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOCOPYBITS);
     if (!defer) return;
     EndDeferWindowPos(defer);
@@ -778,22 +782,16 @@ void refresh_musicbrainz_detail_rows(PreviewState& state) {
     const auto& detail=state.musicbrainz_detail_groups[index];
     for (std::size_t i=0;i<detail.size()&&i<50;++i) {
         const auto& row=detail[i];
-        LVITEMW item{};
-        item.mask=LVIF_TEXT;
-        item.iItem=static_cast<int>(i);
-        auto field=from_utf8(row.field);
-        item.pszText=field.data();
-        const int inserted=ListView_InsertItem(state.musicbrainz_details,&item);
-        if (inserted<0) break;
-        auto local=show_field_values(row.original_values);
-        auto proposed=show_field_values(row.candidate.values);
-        const wchar_t* status=row.state==djmeta::online::FieldReviewState::Blocked
-            ? L"Blocked":row.state==djmeta::online::FieldReviewState::Unchanged
-            ? L"No change":L"Review";
-        ListView_SetItemText(state.musicbrainz_details,inserted,1,local.data());
-        ListView_SetItemText(state.musicbrainz_details,inserted,2,proposed.data());
-        ListView_SetItemText(state.musicbrainz_details,inserted,3,
-                             const_cast<LPWSTR>(status));
+        const auto field=from_utf8(row.field);
+        const auto original=show_field_values(row.original_values);
+        const auto proposed=show_field_values(row.candidate.values);
+        const std::wstring status=row.state==
+            djmeta::online::FieldReviewState::Blocked ? L"Blocked"
+            : row.state==djmeta::online::FieldReviewState::Unchanged
+            ? L"No change" : L"Review";
+        if (!insert_native_preview_detail_row(state.musicbrainz_details,
+              static_cast<int>(i),field,original,proposed,status))
+            throw std::runtime_error("Native candidate detail columns could not be populated.");
     }
 }
 
