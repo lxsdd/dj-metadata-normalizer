@@ -309,7 +309,7 @@ inline bool insert_native_preview_detail_row(HWND list, int index,
     first.iItem=index;
     first.iSubItem=0;
     first.pszText=const_cast<LPWSTR>(field.c_str());
-    const int inserted=ListView_InsertItemW(list,&first);
+    const int inserted=ListView_InsertItem(list,&first);
     if (inserted<0) return false;
     const std::wstring* values[]={&original,&proposed,&status};
     for(int column=1;column<4;++column) {
@@ -318,7 +318,7 @@ inline bool insert_native_preview_detail_row(HWND list, int index,
         item.iItem=inserted;
         item.iSubItem=column;
         item.pszText=const_cast<LPWSTR>(values[column-1]->c_str());
-        if (!ListView_SetItemW(list,&item)) {
+        if (!ListView_SetItem(list,&item)) {
             ListView_DeleteItem(list,inserted);
             return false;
         }
